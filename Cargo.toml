@@ -1,0 +1,3 @@
+[workspace]
+members = [ "ledger-rs-core" ]
+resolver = "3"
