@@ -38,6 +38,7 @@ fn read(f: PathBuf) {
             Statement::Include(y) => Some(y),
             _ => None,
         })
+        .map(|x| &x.0)
         .map(|x| {
             let b = Path::new(x.path);
             match base.parent() {

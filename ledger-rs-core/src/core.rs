@@ -1,4 +1,6 @@
-use std::{fs::OpenOptions, io::Read, path::PathBuf};
+use std::{fs::OpenOptions, io::Read, ops::Range, path::PathBuf};
+
+use winnow::LocatingSlice;
 
 use crate::parse;
 
@@ -21,6 +23,7 @@ impl<'s> BeanFileParse<'s> {
 pub struct BeanFile {
     pub filepath: PathBuf,
     buffer: String,
+    size: usize,
 }
 
 impl BeanFile {
@@ -28,6 +31,7 @@ impl BeanFile {
         let mut result = BeanFile {
             filepath: f,
             buffer: String::new(),
+            size: 0,
         };
         result.read_file();
         result
@@ -38,11 +42,12 @@ impl BeanFile {
             .read(true)
             .open(self.filepath.clone())
             .unwrap();
-        let _ = inputfile.read_to_string(&mut self.buffer).unwrap();
+        let count = inputfile.read_to_string(&mut self.buffer).unwrap();
+        self.size = count;
     }
 
     pub fn parse(&self) -> Vec<Statement<'_>> {
-        parse::parse_file(&mut self.buffer.as_str()).unwrap()
+        parse::parse_file(&mut LocatingSlice::new(self.buffer.as_str())).unwrap()
     }
 }
 
@@ -79,15 +84,15 @@ pub struct Transaction<'a> {
 
 #[derive(PartialEq, Debug)]
 pub enum Statement<'a> {
-    Open(OpenParams<'a>),
-    Close(CloseParams<'a>),
-    Balance(BalanceParams<'a>),
-    Include(IncludeParams<'a>),
-    Transaction(Transaction<'a>),
-    Event(&'a str),
-    Option(&'a str),
-    Custom(&'a str),
+    Open((OpenParams<'a>, Range<usize>)),
+    Close((CloseParams<'a>, Range<usize>)),
+    Balance((BalanceParams<'a>, Range<usize>)),
+    Include((IncludeParams<'a>, Range<usize>)),
+    Transaction((Transaction<'a>, Range<usize>)),
+    Event((&'a str, Range<usize>)),
+    Option((&'a str, Range<usize>)),
+    Custom((&'a str, Range<usize>)),
     Comment(&'a str),
     Empty(&'a str),
-    Other(&'a str),
+    Other((&'a str, Range<usize>)),
 }
