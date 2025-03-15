@@ -1,4 +1,4 @@
-use std::{fs::OpenOptions, io::Read};
+use std::{fs::OpenOptions, io::Read, path::PathBuf};
 
 use crate::parse;
 
@@ -19,16 +19,14 @@ impl<'s> BeanFileParse<'s> {
 
 #[derive(PartialEq, Debug)]
 pub struct BeanFile {
-    directory: String,
-    pub filename: String,
+    pub filepath: PathBuf,
     buffer: String,
 }
 
 impl BeanFile {
-    pub fn new(f: &str, d: &str) -> Self {
+    pub fn new(f: PathBuf) -> Self {
         let mut result = BeanFile {
-            directory: d.to_string(),
-            filename: f.to_string(),
+            filepath: f,
             buffer: String::new(),
         };
         result.read_file();
@@ -36,8 +34,10 @@ impl BeanFile {
     }
 
     fn read_file(&mut self) {
-        let path = format!("{}{}", self.directory, self.filename);
-        let mut inputfile = OpenOptions::new().read(true).open(path).unwrap();
+        let mut inputfile = OpenOptions::new()
+            .read(true)
+            .open(self.filepath.clone())
+            .unwrap();
         let _ = inputfile.read_to_string(&mut self.buffer).unwrap();
     }
 
