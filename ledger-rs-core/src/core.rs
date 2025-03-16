@@ -54,23 +54,23 @@ impl BeanFile {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct OpenParams<'a> {
+pub struct OpenParams {
     pub date: NaiveDate,
-    pub account: &'a str,
+    pub account: String,
 }
 
 #[derive(PartialEq, Debug)]
-pub struct CloseParams<'a> {
+pub struct CloseParams {
     pub date: NaiveDate,
-    pub account: &'a str,
+    pub account: String,
 }
 
 #[derive(PartialEq, Debug)]
-pub struct BalanceParams<'a> {
+pub struct BalanceParams {
     pub date: NaiveDate,
-    pub account: &'a str,
+    pub account: String,
     pub position: Decimal,
-    pub commodity: &'a str,
+    pub commodity: String,
 }
 
 #[derive(PartialEq, Debug)]
@@ -86,25 +86,25 @@ pub struct HeaderParams<'a> {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct PostingParams<'a> {
-    pub account: &'a str,
+pub struct PostingParams {
+    pub account: String,
     pub cp_q: Option<Decimal>,
-    pub cp_c: Option<&'a str>,
+    pub cp_c: Option<String>,
     pub tc_q: Option<Decimal>,
-    pub tc_c: Option<&'a str>,
+    pub tc_c: Option<String>,
 }
 
 #[derive(PartialEq, Debug)]
 pub struct TransactionParams<'a> {
     pub header: HeaderParams<'a>,
-    pub postings: Vec<PostingParams<'a>>,
+    pub postings: Vec<PostingParams>,
 }
 
 #[derive(PartialEq, Debug)]
 pub enum Statement<'a> {
-    Open((OpenParams<'a>, Range<usize>)),
-    Close((CloseParams<'a>, Range<usize>)),
-    Balance((BalanceParams<'a>, Range<usize>)),
+    Open((OpenParams, Range<usize>)),
+    Close((CloseParams, Range<usize>)),
+    Balance((BalanceParams, Range<usize>)),
     Include((IncludeParams<'a>, Range<usize>)),
     Transaction((TransactionParams<'a>, Range<usize>)),
     Event((&'a str, Range<usize>)),

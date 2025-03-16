@@ -60,9 +60,10 @@ fn subaccount<'s>(i: &mut LocatingSlice<&'s str>) -> Result<()> {
     separated(1.., account_name, ":").parse_next(i)
 }
 
-fn full_account<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
+fn full_account<'s>(i: &mut LocatingSlice<&'s str>) -> Result<String> {
     separated_pair(base_account_name, ":", subaccount)
         .take()
+        .map(|x| x.to_string())
         .parse_next(i)
 }
 
@@ -98,21 +99,23 @@ fn decimal_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Decimal> {
     .parse_next(i)
 }
 
-fn commodity<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
+fn commodity<'s>(i: &mut LocatingSlice<&'s str>) -> Result<String> {
     take_while(1.., |c: char| {
         c.is_ascii_uppercase() || c.is_digit(10) || c == '_'
     })
+    .take()
+    .map(|x: &str| x.to_string())
     .parse_next(i)
 }
 
-fn commodity_position<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(Decimal, &'s str)> {
+fn commodity_position<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(Decimal, String)> {
     let (_, q, _, c) = (space1, decimal_string, space1, commodity).parse_next(i)?;
     Ok((q, c))
 }
 
 fn optional_commodity_position<'s>(
     i: &mut LocatingSlice<&'s str>,
-) -> Result<(Option<Decimal>, Option<&'s str>)> {
+) -> Result<(Option<Decimal>, Option<String>)> {
     let r = opt(commodity_position).parse_next(i)?;
     match r {
         Some((q, c)) => Ok((Some(q), Some(c))),
@@ -120,7 +123,7 @@ fn optional_commodity_position<'s>(
     }
 }
 
-fn total_cost<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(Decimal, &'s str)> {
+fn total_cost<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(Decimal, String)> {
     let (_, _, _, q, _, c) = (
         space1,
         literal("@@"),
@@ -135,7 +138,7 @@ fn total_cost<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(Decimal, &'s str)> 
 
 fn optional_total_cost<'s>(
     i: &mut LocatingSlice<&'s str>,
-) -> Result<(Option<Decimal>, Option<&'s str>)> {
+) -> Result<(Option<Decimal>, Option<String>)> {
     let r = opt(total_cost).parse_next(i)?;
     match r {
         Some((q, c)) => Ok((Some(q), Some(c))),
@@ -143,7 +146,7 @@ fn optional_total_cost<'s>(
     }
 }
 
-fn open_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(OpenParams<'s>, Range<usize>)> {
+fn open_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(OpenParams, Range<usize>)> {
     seq!(OpenParams {
          date: date_string,
          _: space1,
@@ -156,7 +159,7 @@ fn open_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(OpenParams<'s>,
     .parse_next(i)
 }
 
-fn close_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(CloseParams<'s>, Range<usize>)> {
+fn close_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(CloseParams, Range<usize>)> {
     seq!(CloseParams {
          date: date_string,
          _: space1,
@@ -169,9 +172,7 @@ fn close_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(CloseParams<'s
     .parse_next(i)
 }
 
-fn balance_statement<'s>(
-    i: &mut LocatingSlice<&'s str>,
-) -> Result<(BalanceParams<'s>, Range<usize>)> {
+fn balance_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(BalanceParams, Range<usize>)> {
     seq!(BalanceParams {
          date: date_string,
          _: space1,
@@ -215,7 +216,7 @@ fn transaction_header<'s>(i: &mut LocatingSlice<&'s str>) -> Result<HeaderParams
     .parse_next(i)
 }
 
-fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams<'s>> {
+fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams> {
     let (_, account, (cp_q, cp_c), (tc_q, tc_c), _, _) = (
         literal("  "),
         full_account,
@@ -229,7 +230,7 @@ fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams<'s>> {
         Ok(PostingParams {
             account,
             cp_q,
-            cp_c,
+            cp_c: cp_c.clone(),
             tc_q: cp_q,
             tc_c: cp_c,
         })
