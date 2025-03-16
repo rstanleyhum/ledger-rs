@@ -71,21 +71,28 @@ fn quoted_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
     delimited('"', take_while(1.., |c| c != '"'), '"').parse_next(i)
 }
 
+fn narration<'s>(i: &mut LocatingSlice<&'s str>) -> Result<String> {
+    quoted_string.take().map(|x| x.to_string()).parse_next(i)
+}
+
 fn comment<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
     preceded(';', take_while(0.., |c: char| c != '\n' && c != '\r'))
         .take()
         .parse_next(i)
 }
 
-fn tag<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
-    preceded('#', alphanumeric1).take().parse_next(i)
+fn tag<'s>(i: &mut LocatingSlice<&'s str>) -> Result<String> {
+    preceded('#', alphanumeric1)
+        .take()
+        .map(|x: &str| x.to_string())
+        .parse_next(i)
 }
 
-fn tag_list<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<&'s str>> {
+fn tag_list<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<String>> {
     separated(1.., tag, " ").parse_next(i)
 }
 
-fn optional_tag_list<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<&'s str>> {
+fn optional_tag_list<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<String>> {
     let (_, r) = (space1, tag_list).parse_next(i)?;
     Ok(r)
 }
@@ -202,13 +209,13 @@ fn include_statement<'s>(
     .parse_next(i)
 }
 
-fn transaction_header<'s>(i: &mut LocatingSlice<&'s str>) -> Result<HeaderParams<'s>> {
+fn transaction_header<'s>(i: &mut LocatingSlice<&'s str>) -> Result<HeaderParams> {
     seq!(HeaderParams {
              date: date_string,
              _: space1,
              _: literal("*"),
              _: space1,
-             narration: quoted_string,
+             narration: narration,
              tags: opt(optional_tag_list),
              _: space0,
              _: opt(comment)
@@ -247,7 +254,7 @@ fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams> {
 
 fn transaction_statement<'s>(
     i: &mut LocatingSlice<&'s str>,
-) -> Result<(TransactionParams<'s>, Range<usize>)> {
+) -> Result<(TransactionParams, Range<usize>)> {
     seq!(TransactionParams {
         header: transaction_header,
         _: line_ending,

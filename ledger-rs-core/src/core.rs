@@ -79,10 +79,10 @@ pub struct IncludeParams<'a> {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct HeaderParams<'a> {
+pub struct HeaderParams {
     pub date: NaiveDate,
-    pub narration: &'a str,
-    pub tags: Option<Vec<&'a str>>,
+    pub narration: String,
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -95,8 +95,8 @@ pub struct PostingParams {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct TransactionParams<'a> {
-    pub header: HeaderParams<'a>,
+pub struct TransactionParams {
+    pub header: HeaderParams,
     pub postings: Vec<PostingParams>,
 }
 
@@ -106,7 +106,7 @@ pub enum Statement<'a> {
     Close((CloseParams, Range<usize>)),
     Balance((BalanceParams, Range<usize>)),
     Include((IncludeParams<'a>, Range<usize>)),
-    Transaction((TransactionParams<'a>, Range<usize>)),
+    Transaction((TransactionParams, Range<usize>)),
     Event((&'a str, Range<usize>)),
     Option((&'a str, Range<usize>)),
     Custom((&'a str, Range<usize>)),
