@@ -21,7 +21,9 @@ use winnow::stream::AsChar;
 use winnow::token::literal;
 use winnow::token::take_while;
 
-use crate::core::{BalanceParams, CloseParams, IncludeParams, OpenParams, Statement, Transaction};
+use crate::core::{
+    BalanceParams, CloseParams, IncludeParams, OpenParams, Statement, TransactionParam,
+};
 
 fn date_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
     seq!(_: take_while(4, |c: char| c.is_dec_digit()),
@@ -185,8 +187,8 @@ fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
 
 fn transaction_statement<'s>(
     i: &mut LocatingSlice<&'s str>,
-) -> Result<(Transaction<'s>, Range<usize>)> {
-    seq!(Transaction {
+) -> Result<(TransactionParam<'s>, Range<usize>)> {
+    seq!(TransactionParam {
         header: transaction_header,
         _: line_ending,
         postings: separated(1.., posting, line_ending),
