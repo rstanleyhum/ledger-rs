@@ -80,6 +80,7 @@ pub struct IncludeParams<'a> {
 
 #[derive(PartialEq, Debug)]
 pub struct HeaderParams {
+    pub start: u32,
     pub date: NaiveDate,
     pub narration: String,
     pub tags: Option<Vec<String>>,
@@ -87,6 +88,7 @@ pub struct HeaderParams {
 
 #[derive(PartialEq, Debug)]
 pub struct PostingParams {
+    pub start: u32,
     pub account: String,
     pub cp_q: Option<Decimal>,
     pub cp_c: Option<String>,

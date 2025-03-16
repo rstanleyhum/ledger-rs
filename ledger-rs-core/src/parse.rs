@@ -210,17 +210,23 @@ fn include_statement<'s>(
 }
 
 fn transaction_header<'s>(i: &mut LocatingSlice<&'s str>) -> Result<HeaderParams> {
-    seq!(HeaderParams {
-             date: date_string,
-             _: space1,
-             _: literal("*"),
-             _: space1,
-             narration: narration,
-             tags: opt(optional_tag_list),
-             _: space0,
-             _: opt(comment)
+    let (date, _, _, _, narration, tags, _, _) = (
+        date_string,
+        space1,
+        literal("*"),
+        space1,
+        narration,
+        opt(optional_tag_list),
+        space0,
+        opt(comment),
+    )
+        .parse_next(i)?;
+    Ok(HeaderParams {
+        start: 0,
+        date,
+        narration,
+        tags,
     })
-    .parse_next(i)
 }
 
 fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams> {
@@ -233,8 +239,10 @@ fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams> {
         opt(comment),
     )
         .parse_next(i)?;
+
     if tc_q.is_none() & tc_c.is_none() {
         Ok(PostingParams {
+            start: 0,
             account,
             cp_q,
             cp_c: cp_c.clone(),
@@ -243,6 +251,7 @@ fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams> {
         })
     } else {
         Ok(PostingParams {
+            start: 0,
             account,
             cp_q,
             cp_c,
@@ -255,13 +264,16 @@ fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams> {
 fn transaction_statement<'s>(
     i: &mut LocatingSlice<&'s str>,
 ) -> Result<(TransactionParams, Range<usize>)> {
-    seq!(TransactionParams {
+    let (mut t, r) = seq!(TransactionParams {
         header: transaction_header,
         _: line_ending,
         postings: separated(1.., posting, line_ending),
     })
     .with_span()
-    .parse_next(i)
+    .parse_next(i)?;
+    t.header.start = r.start as u32;
+    t.postings.iter_mut().for_each(|x| x.start = r.start as u32);
+    Ok((t, r))
 }
 
 fn event_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(&'s str, Range<usize>)> {
