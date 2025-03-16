@@ -77,9 +77,23 @@ pub struct IncludeParams<'a> {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct TransactionParam<'a> {
-    pub header: &'a str,
-    pub postings: Vec<&'a str>,
+pub struct HeaderParams<'a> {
+    pub date: &'a str,
+    pub narration: &'a str,
+    pub tags: Option<Vec<&'a str>>,
+}
+
+#[derive(PartialEq, Debug)]
+pub struct PostingParams<'a> {
+    pub account: &'a str,
+    pub cp: Option<(&'a str, &'a str)>,
+    pub tc: Option<(&'a str, &'a str)>,
+}
+
+#[derive(PartialEq, Debug)]
+pub struct TransactionParams<'a> {
+    pub header: HeaderParams<'a>,
+    pub postings: Vec<PostingParams<'a>>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -88,7 +102,7 @@ pub enum Statement<'a> {
     Close((CloseParams<'a>, Range<usize>)),
     Balance((BalanceParams<'a>, Range<usize>)),
     Include((IncludeParams<'a>, Range<usize>)),
-    Transaction((TransactionParam<'a>, Range<usize>)),
+    Transaction((TransactionParams<'a>, Range<usize>)),
     Event((&'a str, Range<usize>)),
     Option((&'a str, Range<usize>)),
     Custom((&'a str, Range<usize>)),

@@ -21,8 +21,10 @@ use winnow::stream::AsChar;
 use winnow::token::literal;
 use winnow::token::take_while;
 
+use crate::core::HeaderParams;
+use crate::core::PostingParams;
 use crate::core::{
-    BalanceParams, CloseParams, IncludeParams, OpenParams, Statement, TransactionParam,
+    BalanceParams, CloseParams, IncludeParams, OpenParams, Statement, TransactionParams,
 };
 
 fn date_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
@@ -79,6 +81,11 @@ fn tag_list<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<&'s str>> {
     separated(1.., tag, " ").parse_next(i)
 }
 
+fn optional_tag_list<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<&'s str>> {
+    let (_, r) = (space1, tag_list).parse_next(i)?;
+    Ok(r)
+}
+
 fn decimal_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
     seq!(_: opt('-'),
      _: digit1,
@@ -92,6 +99,24 @@ fn commodity<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
         c.is_ascii_uppercase() || c.is_digit(10) || c == '_'
     })
     .parse_next(i)
+}
+
+fn commodity_position<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(&'s str, &'s str)> {
+    let (_, q, _, c) = (space1, decimal_string, space1, commodity).parse_next(i)?;
+    Ok((q, c))
+}
+
+fn total_cost<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(&'s str, &'s str)> {
+    let (_, _, _, q, _, c) = (
+        space1,
+        literal("@@"),
+        space1,
+        decimal_string,
+        space1,
+        commodity,
+    )
+        .parse_next(i)?;
+    Ok((q, c))
 }
 
 fn open_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(OpenParams<'s>, Range<usize>)> {
@@ -152,43 +177,36 @@ fn include_statement<'s>(
     .parse_next(i)
 }
 
-fn transaction_header<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
-    seq!(_: date_string,
-         _: space1,
-         _: literal("*"),
-         _: space1,
-         _: quoted_string,
-         _: opt((space1, tag_list)),
-         _: space0,
-         _: opt(comment))
-    .take()
+fn transaction_header<'s>(i: &mut LocatingSlice<&'s str>) -> Result<HeaderParams<'s>> {
+    seq!(HeaderParams {
+             date: date_string,
+             _: space1,
+             _: literal("*"),
+             _: space1,
+             narration: quoted_string,
+             tags: opt(optional_tag_list),
+             _: space0,
+             _: opt(comment)
+    })
     .parse_next(i)
 }
 
-fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
-    seq!(_: literal("  "),
-         _: full_account,
-         _: opt(seq!(_: space1,
-                     _: decimal_string,
-                     _: space1,
-                     _: commodity)),
-         _: opt(seq!(_: space1,
-                     _: literal("@@"),
-                     _: space1,
-                     _: decimal_string,
-                     _: space1,
-                     _: commodity)),
-         _: space0,
-         _: opt(comment)
-    )
-    .take()
+fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams<'s>> {
+    seq!(PostingParams {
+             _: literal("  "),
+             account: full_account,
+             cp: opt(commodity_position),
+             tc: opt(total_cost),
+             _: space0,
+             _: opt(comment)
+    })
     .parse_next(i)
 }
 
 fn transaction_statement<'s>(
     i: &mut LocatingSlice<&'s str>,
-) -> Result<(TransactionParam<'s>, Range<usize>)> {
-    seq!(TransactionParam {
+) -> Result<(TransactionParams<'s>, Range<usize>)> {
+    seq!(TransactionParams {
         header: transaction_header,
         _: line_ending,
         postings: separated(1.., posting, line_ending),
