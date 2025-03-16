@@ -88,8 +88,10 @@ pub struct HeaderParams<'a> {
 #[derive(PartialEq, Debug)]
 pub struct PostingParams<'a> {
     pub account: &'a str,
-    pub cp: Option<(Decimal, &'a str)>,
-    pub tc: Option<(Decimal, &'a str)>,
+    pub cp_q: Option<Decimal>,
+    pub cp_c: Option<&'a str>,
+    pub tc_q: Option<Decimal>,
+    pub tc_c: Option<&'a str>,
 }
 
 #[derive(PartialEq, Debug)]

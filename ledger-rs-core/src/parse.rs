@@ -110,6 +110,16 @@ fn commodity_position<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(Decimal, &'
     Ok((q, c))
 }
 
+fn optional_commodity_position<'s>(
+    i: &mut LocatingSlice<&'s str>,
+) -> Result<(Option<Decimal>, Option<&'s str>)> {
+    let r = opt(commodity_position).parse_next(i)?;
+    match r {
+        Some((q, c)) => Ok((Some(q), Some(c))),
+        None => Ok((None, None)),
+    }
+}
+
 fn total_cost<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(Decimal, &'s str)> {
     let (_, _, _, q, _, c) = (
         space1,
@@ -121,6 +131,16 @@ fn total_cost<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(Decimal, &'s str)> 
     )
         .parse_next(i)?;
     Ok((q, c))
+}
+
+fn optional_total_cost<'s>(
+    i: &mut LocatingSlice<&'s str>,
+) -> Result<(Option<Decimal>, Option<&'s str>)> {
+    let r = opt(total_cost).parse_next(i)?;
+    match r {
+        Some((q, c)) => Ok((Some(q), Some(c))),
+        None => Ok((None, None)),
+    }
 }
 
 fn open_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(OpenParams<'s>, Range<usize>)> {
@@ -196,15 +216,32 @@ fn transaction_header<'s>(i: &mut LocatingSlice<&'s str>) -> Result<HeaderParams
 }
 
 fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams<'s>> {
-    seq!(PostingParams {
-             _: literal("  "),
-             account: full_account,
-             cp: opt(commodity_position),
-             tc: opt(total_cost),
-             _: space0,
-             _: opt(comment)
-    })
-    .parse_next(i)
+    let (_, account, (cp_q, cp_c), (tc_q, tc_c), _, _) = (
+        literal("  "),
+        full_account,
+        optional_commodity_position,
+        optional_total_cost,
+        space0,
+        opt(comment),
+    )
+        .parse_next(i)?;
+    if tc_q.is_none() & tc_c.is_none() {
+        Ok(PostingParams {
+            account,
+            cp_q,
+            cp_c,
+            tc_q: cp_q,
+            tc_c: cp_c,
+        })
+    } else {
+        Ok(PostingParams {
+            account,
+            cp_q,
+            cp_c,
+            tc_q,
+            tc_c,
+        })
+    }
 }
 
 fn transaction_statement<'s>(
