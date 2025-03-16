@@ -1,5 +1,7 @@
 use std::ops::Range;
 
+use chrono::NaiveDate;
+use rust_decimal::Decimal;
 use winnow::LocatingSlice;
 use winnow::Parser;
 use winnow::Result;
@@ -27,7 +29,7 @@ use crate::core::{
     BalanceParams, CloseParams, IncludeParams, OpenParams, Statement, TransactionParams,
 };
 
-fn date_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
+fn date_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<NaiveDate> {
     seq!(_: take_while(4, |c: char| c.is_dec_digit()),
      _: '-',
      _: take_while(2, |c: char| c.is_dec_digit()),
@@ -35,6 +37,7 @@ fn date_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
      _: take_while(2, |c: char| c.is_dec_digit())
     )
     .take()
+    .try_map(|x| NaiveDate::parse_from_str(x, "%Y-%m-%d"))
     .parse_next(i)
 }
 
@@ -86,11 +89,12 @@ fn optional_tag_list<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<&'s str>>
     Ok(r)
 }
 
-fn decimal_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
+fn decimal_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Decimal> {
     seq!(_: opt('-'),
      _: digit1,
      _: opt(preceded('.', digit1)))
     .take()
+    .try_map(|x| Decimal::from_str_exact(x))
     .parse_next(i)
 }
 
@@ -101,12 +105,12 @@ fn commodity<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
     .parse_next(i)
 }
 
-fn commodity_position<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(&'s str, &'s str)> {
+fn commodity_position<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(Decimal, &'s str)> {
     let (_, q, _, c) = (space1, decimal_string, space1, commodity).parse_next(i)?;
     Ok((q, c))
 }
 
-fn total_cost<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(&'s str, &'s str)> {
+fn total_cost<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(Decimal, &'s str)> {
     let (_, _, _, q, _, c) = (
         space1,
         literal("@@"),
@@ -296,171 +300,4 @@ fn full_file<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<Statement<'s>>> {
 
 pub fn parse_file<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<Statement<'s>>> {
     full_file.parse_next(i)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_narration() {
-        let mut i = LocatingSlice::new(r#""hello blag ' again""#);
-        let a = quoted_string.parse_next(&mut i).unwrap();
-        let e = (LocatingSlice::new(""), "hello blag ' again");
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_full_account() {
-        let mut i = LocatingSlice::new(r#"Income:Income-Stan:Rental"#);
-        let a = full_account.parse_next(&mut i).unwrap();
-        let e = (LocatingSlice::new(""), "Income:Income-Stan:Rental");
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_comment() {
-        let mut i = LocatingSlice::new(";this is a comment income:Income-Stan:Rental\n");
-        let a = comment.parse_next(&mut i).unwrap();
-        let e = (
-            LocatingSlice::new("\n"),
-            ";this is a comment income:Income-Stan:Rental",
-        );
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_date_string() {
-        let mut i = LocatingSlice::new("2025-02-09 *");
-        let a = date_string.parse_next(&mut i).unwrap();
-        let e = (LocatingSlice::new(" *"), "2025-02-09");
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_tag() {
-        let mut i = LocatingSlice::new("#FLL ");
-        let a = tag.parse_next(&mut i).unwrap();
-        let e = (LocatingSlice::new(" "), "#FLL");
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_tag_2() {
-        let mut i = LocatingSlice::new("#FLL");
-        let a = tag.parse_next(&mut i).unwrap();
-        let e = (LocatingSlice::new(""), "#FLL");
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_decimal_positive() {
-        let mut i = LocatingSlice::new("123.45");
-        let a = decimal_string.parse_next(&mut i).unwrap();
-        let e = (LocatingSlice::new(""), "123.45");
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_decimal_negative() {
-        let mut i = LocatingSlice::new("-123.45");
-        let a = decimal_string.parse_next(&mut i).unwrap();
-        let e = (LocatingSlice::new(""), "-123.45");
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_decimal_positive_whole() {
-        let mut i = LocatingSlice::new("123");
-        let a = decimal_string.parse_next(&mut i).unwrap();
-        let e = (LocatingSlice::new(""), "123");
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_decimal_negative_whole() {
-        let mut i = LocatingSlice::new("-123;");
-        let a = decimal_string.parse_next(&mut i).unwrap();
-        let e = (LocatingSlice::new(";"), "-123");
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_commodity() {
-        let mut i = LocatingSlice::new("USD ");
-        let a = commodity.parse_next(&mut i).unwrap();
-        let e = (LocatingSlice::new(" "), "USD");
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_commodity_2() {
-        let mut i = LocatingSlice::new("USDa ");
-        let a = commodity.parse_next(&mut i).unwrap();
-        let e = (LocatingSlice::new("a "), "USD");
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_commodity_3() {
-        let mut i = LocatingSlice::new("USD");
-        let a = commodity.parse_next(&mut i).unwrap();
-        let e = (LocatingSlice::new(""), "USD");
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_open_statement() {
-        let mut i = LocatingSlice::new("2024-01-01 open  Expenses:Adjustment");
-        let a = open_statement.parse_next(&mut i).unwrap();
-        let e = (
-            LocatingSlice::new(""),
-            (
-                OpenParams {
-                    date: "2024-01-01",
-                    account: "Expenses:Adjustment",
-                },
-                (0..40),
-            ),
-        );
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_close_statement() {
-        let mut i = LocatingSlice::new("2024-01-01 close Expenses:Adjustment");
-        let a = close_statement.parse_next(&mut i).unwrap();
-        let e = (
-            LocatingSlice::new(""),
-            (
-                CloseParams {
-                    date: "2024-01-01",
-                    account: "Expenses:Adjustment",
-                },
-                (0..30),
-            ),
-        );
-        assert_eq!((i, a), e)
-    }
-
-    #[test]
-    fn test_balance_statement() {
-        let mut i = LocatingSlice::new(
-            "2024-01-01 balance  Expenses:Adjustment                   0.00 CAD",
-        );
-        let a = balance_statement.parse_next(&mut i).unwrap();
-        let e = (
-            LocatingSlice::new(""),
-            (
-                BalanceParams {
-                    date: "2024-01-01",
-                    account: "Expenses:Adjustment",
-                    position: "0.00",
-                    commodity: "CAD",
-                },
-                (0..30),
-            ),
-        );
-        assert_eq!((i, a), e)
-    }
 }

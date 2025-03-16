@@ -1,5 +1,7 @@
 use std::{fs::OpenOptions, io::Read, ops::Range, path::PathBuf};
 
+use chrono::NaiveDate;
+use rust_decimal::Decimal;
 use winnow::LocatingSlice;
 
 use crate::parse;
@@ -53,21 +55,21 @@ impl BeanFile {
 
 #[derive(PartialEq, Debug)]
 pub struct OpenParams<'a> {
-    pub date: &'a str,
+    pub date: NaiveDate,
     pub account: &'a str,
 }
 
 #[derive(PartialEq, Debug)]
 pub struct CloseParams<'a> {
-    pub date: &'a str,
+    pub date: NaiveDate,
     pub account: &'a str,
 }
 
 #[derive(PartialEq, Debug)]
 pub struct BalanceParams<'a> {
-    pub date: &'a str,
+    pub date: NaiveDate,
     pub account: &'a str,
-    pub position: &'a str,
+    pub position: Decimal,
     pub commodity: &'a str,
 }
 
@@ -78,7 +80,7 @@ pub struct IncludeParams<'a> {
 
 #[derive(PartialEq, Debug)]
 pub struct HeaderParams<'a> {
-    pub date: &'a str,
+    pub date: NaiveDate,
     pub narration: &'a str,
     pub tags: Option<Vec<&'a str>>,
 }
@@ -86,8 +88,8 @@ pub struct HeaderParams<'a> {
 #[derive(PartialEq, Debug)]
 pub struct PostingParams<'a> {
     pub account: &'a str,
-    pub cp: Option<(&'a str, &'a str)>,
-    pub tc: Option<(&'a str, &'a str)>,
+    pub cp: Option<(Decimal, &'a str)>,
+    pub tc: Option<(Decimal, &'a str)>,
 }
 
 #[derive(PartialEq, Debug)]
