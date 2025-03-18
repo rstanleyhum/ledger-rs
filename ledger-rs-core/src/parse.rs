@@ -24,6 +24,8 @@ use winnow::stream::AsChar;
 use winnow::token::literal;
 use winnow::token::take_while;
 
+use crate::core::get_contents;
+use crate::core::new_beaninput;
 use crate::core::{
     BalanceParams, BeanInput, CloseParams, HeaderParams, IncludeParams, OpenParams, PostingParams,
     Statement, TransactionParams,
@@ -163,8 +165,8 @@ fn open_statement<'s>(i: &mut BeanInput<'s>) -> Result<(OpenParams, Range<usize>
         .parse_next(i)?;
     Ok((
         OpenParams {
-            statement_no: i.state.current_position,
-            file_no: i.state.current_file_no,
+            statement_no: i.state.statement_no(r.start as u32),
+            file_no: i.state.get_file_no().unwrap(),
             start: r.start as u32,
             end: r.end as u32,
             date,
@@ -188,8 +190,8 @@ fn close_statement<'s>(i: &mut BeanInput<'s>) -> Result<(CloseParams, Range<usiz
         .parse_next(i)?;
     Ok((
         CloseParams {
-            statement_no: i.state.current_position,
-            file_no: i.state.current_file_no,
+            statement_no: i.state.statement_no(r.start as u32),
+            file_no: i.state.get_file_no().unwrap(),
             start: r.start as u32,
             end: r.end as u32,
             date,
@@ -217,8 +219,8 @@ fn balance_statement<'s>(i: &mut BeanInput<'s>) -> Result<(BalanceParams, Range<
         .parse_next(i)?;
     Ok((
         BalanceParams {
-            statement_no: i.state.current_position,
-            file_no: i.state.current_file_no,
+            statement_no: i.state.statement_no(r.start as u32),
+            file_no: i.state.get_file_no().unwrap(),
             start: r.start as u32,
             end: r.end as u32,
             date,
@@ -241,14 +243,19 @@ fn include_statement<'s>(i: &mut BeanInput<'s>) -> Result<(IncludeParams, Range<
         .with_span()
         .parse_next(i)?;
     let p = Path::new(path).to_path_buf();
-    i.state.insert(p);
+    i.state.insert(p.clone());
+    let in_contents = get_contents(p.as_path()).unwrap();
+    let mut input = new_beaninput(&in_contents, i.state);
+    let s = parse_file(&mut input)?;
+    i.state.finished();
     Ok((
         IncludeParams {
-            statement_no: i.state.current_position,
-            file_no: i.state.current_file_no,
+            statement_no: i.state.statement_no(r.start as u32),
+            file_no: i.state.get_file_no().unwrap(),
             start: r.start as u32,
             end: r.end as u32,
             path: path.to_string(),
+            statements: s,
         },
         r,
     ))
@@ -268,8 +275,8 @@ fn transaction_header<'s>(i: &mut BeanInput<'s>) -> Result<HeaderParams> {
         .with_span()
         .parse_next(i)?;
     Ok(HeaderParams {
-        statement_no: i.state.current_position,
-        file_no: i.state.current_file_no,
+        statement_no: i.state.statement_no(r.start as u32),
+        file_no: i.state.get_file_no().unwrap(),
         start: r.start as u32,
         end: r.end as u32,
         date,
@@ -292,8 +299,8 @@ fn posting<'s>(i: &mut BeanInput<'s>) -> Result<PostingParams> {
 
     if tc_q.is_none() & tc_c.is_none() {
         Ok(PostingParams {
-            statement_no: i.state.current_position,
-            file_no: i.state.current_file_no,
+            statement_no: i.state.statement_no(r.start as u32),
+            file_no: i.state.get_file_no().unwrap(),
             start: r.start as u32,
             end: r.end as u32,
             account,
@@ -304,8 +311,8 @@ fn posting<'s>(i: &mut BeanInput<'s>) -> Result<PostingParams> {
         })
     } else {
         Ok(PostingParams {
-            statement_no: i.state.current_position,
-            file_no: i.state.current_file_no,
+            statement_no: i.state.statement_no(r.start as u32),
+            file_no: i.state.get_file_no().unwrap(),
             start: r.start as u32,
             end: r.end as u32,
             account,
@@ -318,15 +325,13 @@ fn posting<'s>(i: &mut BeanInput<'s>) -> Result<PostingParams> {
 }
 
 fn transaction_statement<'s>(i: &mut BeanInput<'s>) -> Result<(TransactionParams, Range<usize>)> {
-    let (t, r) = seq!(TransactionParams {
+    seq!(TransactionParams {
         header: transaction_header,
         _: line_ending,
         postings: separated(1.., posting, line_ending),
     })
     .with_span()
-    .parse_next(i)?;
-    i.state.increment_pos();
-    Ok((t, r))
+    .parse_next(i)
 }
 
 fn event_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
@@ -383,7 +388,7 @@ fn other_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
     till_line_ending.span().parse_next(i)
 }
 
-fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<(Statement, Range<usize>)> {
+fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<Statement> {
     alt((
         open_statement.map(Statement::Open),
         close_statement.map(Statement::Close),
@@ -397,19 +402,18 @@ fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<(Statement, Range<usize
         empty_statement.map(Statement::Empty),
         other_statement.map(Statement::Other),
     ))
-    .with_span()
     .parse_next(i)
 }
 
-fn active_statements<'s>(i: &mut BeanInput<'s>) -> Result<Vec<(Statement, Range<usize>)>> {
+fn active_statements<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement>> {
     separated(0.., active_statement, line_ending).parse_next(i)
 }
 
-fn full_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<(Statement, Range<usize>)>> {
+fn full_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement>> {
     let (active_statements, _) = (active_statements, eof).parse_next(i)?;
     Ok(active_statements)
 }
 
-pub fn parse_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<(Statement, Range<usize>)>> {
+pub fn parse_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement>> {
     full_file.parse_next(i)
 }

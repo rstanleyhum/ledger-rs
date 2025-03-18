@@ -1,9 +1,9 @@
-use std::{ops::Range, path::PathBuf};
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
 use ledger_rs_core::{
-    core::{BeanFileStorage, LedgerParserState, Statement, get_contents, new_beaninput},
+    core::{LedgerParserState, Statement, get_contents, new_beaninput},
     parse::parse_file,
 };
 
@@ -30,38 +30,16 @@ fn main() {
 fn readall(f: PathBuf) {
     let mut state = LedgerParserState::new();
 
-    state.insert(f);
+    let mut all_statements: Vec<Statement> = vec![];
 
-    let mut storage = BeanFileStorage::new();
+    state.insert(f.clone());
 
-    let mut all_statements: Vec<(Statement, Range<usize>)> = vec![];
-
-    while !state.all_files_read() {
-        let mut temp: Vec<(u32, PathBuf, String)> = vec![];
-
-        for (p, (n, _)) in &state.input_files {
-            let s = get_contents(p.as_path().as_ref());
-            match s {
-                Ok(b) => {
-                    temp.push((*n, p.clone().to_path_buf(), b));
-                }
-                Err(x) => println!("{:?}", x),
-            }
-        }
-
-        for (n, p, b) in temp {
-            storage.add(b, n);
-            let input = storage.get_ref(n);
-            state.set_current_file_no(n);
-            let mut beaninput = new_beaninput(input, &mut state);
-            let mut s = parse_file(&mut beaninput).unwrap();
-            all_statements.append(&mut s);
-            state.set_read(p);
-        }
-    }
+    let input = get_contents(f.as_path()).unwrap();
+    let mut beaninput = new_beaninput(&input, &mut state);
+    let mut s = parse_file(&mut beaninput).unwrap();
+    all_statements.append(&mut s);
 
     println!("{:?}", state);
-    println!("{:?}", storage.file_contents.len());
 
     all_statements.iter().for_each(|x| println!("{:?}", x));
 }

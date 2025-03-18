@@ -49,6 +49,7 @@ pub struct IncludeParams {
     pub start: u32,
     pub end: u32,
     pub path: String,
+    pub statements: Vec<Statement>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -107,71 +108,53 @@ pub fn new_beaninput<'s>(s: &'s str, state: &'s mut LedgerParserState) -> BeanIn
 
 #[derive(Debug)]
 pub struct LedgerParserState {
-    pub input_files: HashMap<PathBuf, (u32, bool)>,
-    pub current_file_no: u32,
-    pub current_position: u32,
+    pub input_files: HashMap<PathBuf, u32>,
+    current_file_no: Vec<u32>,
+    previous_position: HashMap<u32, u32>,
+    statement_no: u32,
 }
 
 impl LedgerParserState {
     pub fn new() -> Self {
         Self {
             input_files: HashMap::new(),
-            current_file_no: 0,
-            current_position: 0,
+            current_file_no: vec![],
+            previous_position: HashMap::new(),
+            statement_no: 0,
         }
     }
 
     pub fn insert(&mut self, f: PathBuf) {
         if !self.input_files.contains_key(&f) {
             let n = self.input_files.len();
-            self.input_files.insert(f, (n as u32, false));
+            self.input_files.insert(f, n as u32);
+            self.current_file_no.push(n as u32);
+            self.previous_position.insert(n as u32, 0);
         }
     }
 
-    pub fn set_read(&mut self, f: PathBuf) {
-        match self.input_files.get(&f) {
-            Some((n, _)) => {
-                self.input_files.insert(f, (*n, true));
-            }
-            None => {}
+    pub fn statement_no(&mut self, r_start: u32) -> u32 {
+        let prev = self
+            .previous_position
+            .get(&self.get_file_no().unwrap())
+            .unwrap();
+        self.statement_no = self.statement_no + r_start - *prev;
+        self.previous_position
+            .insert(self.get_file_no().unwrap(), r_start);
+        self.statement_no
+    }
+
+    pub fn get_file_no(&self) -> Option<u32> {
+        let current = self.current_file_no.len();
+        if current == 0 {
+            None
+        } else {
+            Some(self.current_file_no[current - 1])
         }
     }
 
-    pub fn all_files_read(&self) -> bool {
-        for (_, (_, d)) in &self.input_files {
-            if !d {
-                return false;
-            }
-        }
-        true
-    }
-
-    pub fn set_current_file_no(&mut self, n: u32) {
-        self.current_file_no = n;
-    }
-
-    pub fn increment_pos(&mut self) {
-        self.current_position += 1;
-    }
-}
-
-pub struct BeanFileStorage {
-    pub file_contents: HashMap<u32, String>,
-}
-
-impl BeanFileStorage {
-    pub fn new() -> Self {
-        Self {
-            file_contents: HashMap::new(),
-        }
-    }
-
-    pub fn add(&mut self, c: String, f: u32) {
-        self.file_contents.insert(f, c);
-    }
-
-    pub fn get_ref<'s>(&'s mut self, f: u32) -> &'s str {
-        self.file_contents.get_mut(&f).unwrap()
+    pub fn finished(&mut self) {
+        self.current_file_no.pop();
     }
 }
 
