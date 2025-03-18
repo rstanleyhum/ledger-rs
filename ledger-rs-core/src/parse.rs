@@ -150,46 +150,84 @@ fn opt_total_cost<'s>(i: &mut BeanInput<'s>) -> Result<(Option<Decimal>, Option<
 }
 
 fn open_statement<'s>(i: &mut BeanInput<'s>) -> Result<(OpenParams, Range<usize>)> {
-    seq!(OpenParams {
-         date: date_string,
-         _: space1,
-         _: literal("open"),
-         _: space1,
-         account: full_account,
-         _: space0,
-         _: opt(comment)})
-    .with_span()
-    .parse_next(i)
+    let ((date, _, _, _, account, _, _), r) = (
+        date_string,
+        space1,
+        literal("open"),
+        space1,
+        full_account,
+        space0,
+        opt(comment),
+    )
+        .with_span()
+        .parse_next(i)?;
+    Ok((
+        OpenParams {
+            statement_no: i.state.current_position,
+            file_no: i.state.current_file_no,
+            start: r.start as u32,
+            end: r.end as u32,
+            date,
+            account,
+        },
+        r,
+    ))
 }
 
 fn close_statement<'s>(i: &mut BeanInput<'s>) -> Result<(CloseParams, Range<usize>)> {
-    seq!(CloseParams {
-         date: date_string,
-         _: space1,
-         _: literal("close"),
-         _: space1,
-         account: full_account,
-         _: space0,
-         _: opt(comment)})
-    .with_span()
-    .parse_next(i)
+    let ((date, _, _, _, account, _, _), r) = (
+        date_string,
+        space1,
+        literal("close"),
+        space1,
+        full_account,
+        space0,
+        opt(comment),
+    )
+        .with_span()
+        .parse_next(i)?;
+    Ok((
+        CloseParams {
+            statement_no: i.state.current_position,
+            file_no: i.state.current_file_no,
+            start: r.start as u32,
+            end: r.end as u32,
+            date,
+            account,
+        },
+        r,
+    ))
 }
 
 fn balance_statement<'s>(i: &mut BeanInput<'s>) -> Result<(BalanceParams, Range<usize>)> {
-    seq!(BalanceParams {
-         date: date_string,
-         _: space1,
-         _: literal("balance"),
-         _: space1,
-         account: full_account,
-         _: space1,
-         position: decimal_string,
-         _: space1,
-         commodity: commodity,
-         _: space0,
-         _: opt(comment)})
-    .with_span()
-    .parse_next(i)
+    let ((date, _, _, _, account, _, position, _, commodity, _, _), r) = (
+        date_string,
+        space1,
+        literal("balance"),
+        space1,
+        full_account,
+        space1,
+        decimal_string,
+        space1,
+        commodity,
+        space0,
+        opt(comment),
+    )
+        .with_span()
+        .parse_next(i)?;
+    Ok((
+        BalanceParams {
+            statement_no: i.state.current_position,
+            file_no: i.state.current_file_no,
+            start: r.start as u32,
+            end: r.end as u32,
+            date,
+            account,
+            position,
+            commodity,
+        },
+        r,
+    ))
 }
 
 fn include_statement<'s>(i: &mut BeanInput<'s>) -> Result<(IncludeParams, Range<usize>)> {
@@ -206,6 +244,8 @@ fn include_statement<'s>(i: &mut BeanInput<'s>) -> Result<(IncludeParams, Range<
     i.state.insert(p);
     Ok((
         IncludeParams {
+            statement_no: i.state.current_position,
+            file_no: i.state.current_file_no,
             start: r.start as u32,
             end: r.end as u32,
             path: path.to_string(),
@@ -215,7 +255,7 @@ fn include_statement<'s>(i: &mut BeanInput<'s>) -> Result<(IncludeParams, Range<
 }
 
 fn transaction_header<'s>(i: &mut BeanInput<'s>) -> Result<HeaderParams> {
-    let (date, _, _, _, narration, tags, _, _) = (
+    let ((date, _, _, _, narration, tags, _, _), r) = (
         date_string,
         space1,
         literal("*"),
@@ -225,12 +265,13 @@ fn transaction_header<'s>(i: &mut BeanInput<'s>) -> Result<HeaderParams> {
         space0,
         opt(comment),
     )
+        .with_span()
         .parse_next(i)?;
     Ok(HeaderParams {
-        transaction_no: i.state.current_position,
+        statement_no: i.state.current_position,
         file_no: i.state.current_file_no,
-        start: 0,
-        end: 0,
+        start: r.start as u32,
+        end: r.end as u32,
         date,
         narration,
         tags,
@@ -238,7 +279,7 @@ fn transaction_header<'s>(i: &mut BeanInput<'s>) -> Result<HeaderParams> {
 }
 
 fn posting<'s>(i: &mut BeanInput<'s>) -> Result<PostingParams> {
-    let (_, account, (cp_q, cp_c), (tc_q, tc_c), _, _) = (
+    let ((_, account, (cp_q, cp_c), (tc_q, tc_c), _, _), r) = (
         literal("  "),
         full_account,
         opt_commodity_position,
@@ -246,13 +287,15 @@ fn posting<'s>(i: &mut BeanInput<'s>) -> Result<PostingParams> {
         space0,
         opt(comment),
     )
+        .with_span()
         .parse_next(i)?;
 
     if tc_q.is_none() & tc_c.is_none() {
         Ok(PostingParams {
-            transaction_no: i.state.current_position,
+            statement_no: i.state.current_position,
             file_no: i.state.current_file_no,
-            start: 0,
+            start: r.start as u32,
+            end: r.end as u32,
             account,
             cp_q,
             cp_c: cp_c.clone(),
@@ -261,9 +304,10 @@ fn posting<'s>(i: &mut BeanInput<'s>) -> Result<PostingParams> {
         })
     } else {
         Ok(PostingParams {
-            transaction_no: i.state.current_position,
+            statement_no: i.state.current_position,
             file_no: i.state.current_file_no,
-            start: 0,
+            start: r.start as u32,
+            end: r.end as u32,
             account,
             cp_q,
             cp_c,
@@ -274,16 +318,13 @@ fn posting<'s>(i: &mut BeanInput<'s>) -> Result<PostingParams> {
 }
 
 fn transaction_statement<'s>(i: &mut BeanInput<'s>) -> Result<(TransactionParams, Range<usize>)> {
-    let (mut t, r) = seq!(TransactionParams {
+    let (t, r) = seq!(TransactionParams {
         header: transaction_header,
         _: line_ending,
         postings: separated(1.., posting, line_ending),
     })
     .with_span()
     .parse_next(i)?;
-    t.header.start = r.start as u32;
-    t.header.end = r.end as u32;
-    t.postings.iter_mut().for_each(|x| x.start = r.start as u32);
     i.state.increment_pos();
     Ok((t, r))
 }
@@ -342,7 +383,7 @@ fn other_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
     till_line_ending.span().parse_next(i)
 }
 
-fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<Statement> {
+fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<(Statement, Range<usize>)> {
     alt((
         open_statement.map(Statement::Open),
         close_statement.map(Statement::Close),
@@ -356,18 +397,19 @@ fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<Statement> {
         empty_statement.map(Statement::Empty),
         other_statement.map(Statement::Other),
     ))
+    .with_span()
     .parse_next(i)
 }
 
-fn active_statements<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement>> {
+fn active_statements<'s>(i: &mut BeanInput<'s>) -> Result<Vec<(Statement, Range<usize>)>> {
     separated(0.., active_statement, line_ending).parse_next(i)
 }
 
-fn full_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement>> {
+fn full_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<(Statement, Range<usize>)>> {
     let (active_statements, _) = (active_statements, eof).parse_next(i)?;
     Ok(active_statements)
 }
 
-pub fn parse_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement>> {
+pub fn parse_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<(Statement, Range<usize>)>> {
     full_file.parse_next(i)
 }

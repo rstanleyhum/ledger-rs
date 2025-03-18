@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{ops::Range, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 
@@ -34,7 +34,7 @@ fn readall(f: PathBuf) {
 
     let mut storage = BeanFileStorage::new();
 
-    let mut all_statements: Vec<Statement> = vec![];
+    let mut all_statements: Vec<(Statement, Range<usize>)> = vec![];
 
     while !state.all_files_read() {
         let mut temp: Vec<(u32, PathBuf, String)> = vec![];

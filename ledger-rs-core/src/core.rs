@@ -12,18 +12,30 @@ use winnow::{LocatingSlice, Stateful, Str};
 
 #[derive(PartialEq, Debug)]
 pub struct OpenParams {
+    pub statement_no: u32,
+    pub file_no: u32,
+    pub start: u32,
+    pub end: u32,
     pub date: NaiveDate,
     pub account: String,
 }
 
 #[derive(PartialEq, Debug)]
 pub struct CloseParams {
+    pub statement_no: u32,
+    pub file_no: u32,
+    pub start: u32,
+    pub end: u32,
     pub date: NaiveDate,
     pub account: String,
 }
 
 #[derive(PartialEq, Debug)]
 pub struct BalanceParams {
+    pub statement_no: u32,
+    pub file_no: u32,
+    pub start: u32,
+    pub end: u32,
     pub date: NaiveDate,
     pub account: String,
     pub position: Decimal,
@@ -32,6 +44,8 @@ pub struct BalanceParams {
 
 #[derive(PartialEq, Debug)]
 pub struct IncludeParams {
+    pub statement_no: u32,
+    pub file_no: u32,
     pub start: u32,
     pub end: u32,
     pub path: String,
@@ -39,7 +53,7 @@ pub struct IncludeParams {
 
 #[derive(PartialEq, Debug)]
 pub struct HeaderParams {
-    pub transaction_no: u32,
+    pub statement_no: u32,
     pub file_no: u32,
     pub start: u32,
     pub end: u32,
@@ -50,9 +64,10 @@ pub struct HeaderParams {
 
 #[derive(PartialEq, Debug)]
 pub struct PostingParams {
-    pub transaction_no: u32,
+    pub statement_no: u32,
     pub file_no: u32,
     pub start: u32,
+    pub end: u32,
     pub account: String,
     pub cp_q: Option<Decimal>,
     pub cp_c: Option<String>,
