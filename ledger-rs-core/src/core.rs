@@ -1,57 +1,14 @@
-use std::{fs::OpenOptions, io::Read, ops::Range, path::PathBuf};
+use std::{
+    collections::HashMap,
+    fs::OpenOptions,
+    io::{Error, Read},
+    ops::Range,
+    path::{Path, PathBuf},
+};
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
-use winnow::LocatingSlice;
-
-use crate::parse;
-
-#[derive(PartialEq, Debug)]
-pub struct BeanFileParse<'s> {
-    pub beanfile: BeanFile,
-    pub statements: Vec<Statement<'s>>,
-}
-
-impl<'s> BeanFileParse<'s> {
-    pub fn new(b: BeanFile) -> Self {
-        BeanFileParse {
-            beanfile: b,
-            statements: vec![],
-        }
-    }
-}
-
-#[derive(PartialEq, Debug)]
-pub struct BeanFile {
-    pub filepath: PathBuf,
-    buffer: String,
-    size: usize,
-}
-
-impl BeanFile {
-    pub fn new(f: PathBuf) -> Self {
-        let mut result = BeanFile {
-            filepath: f,
-            buffer: String::new(),
-            size: 0,
-        };
-        result.read_file();
-        result
-    }
-
-    fn read_file(&mut self) {
-        let mut inputfile = OpenOptions::new()
-            .read(true)
-            .open(self.filepath.clone())
-            .unwrap();
-        let count = inputfile.read_to_string(&mut self.buffer).unwrap();
-        self.size = count;
-    }
-
-    pub fn parse(&self) -> Vec<Statement<'_>> {
-        parse::parse_file(&mut LocatingSlice::new(self.buffer.as_str())).unwrap()
-    }
-}
+use winnow::{LocatingSlice, Stateful, Str};
 
 #[derive(PartialEq, Debug)]
 pub struct OpenParams {
@@ -74,13 +31,18 @@ pub struct BalanceParams {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct IncludeParams<'a> {
-    pub path: &'a str,
+pub struct IncludeParams {
+    pub start: u32,
+    pub end: u32,
+    pub path: String,
 }
 
 #[derive(PartialEq, Debug)]
 pub struct HeaderParams {
+    pub transaction_no: u32,
+    pub file_no: u32,
     pub start: u32,
+    pub end: u32,
     pub date: NaiveDate,
     pub narration: String,
     pub tags: Option<Vec<String>>,
@@ -88,6 +50,8 @@ pub struct HeaderParams {
 
 #[derive(PartialEq, Debug)]
 pub struct PostingParams {
+    pub transaction_no: u32,
+    pub file_no: u32,
     pub start: u32,
     pub account: String,
     pub cp_q: Option<Decimal>,
@@ -107,7 +71,7 @@ pub enum Statement<'a> {
     Open((OpenParams, Range<usize>)),
     Close((CloseParams, Range<usize>)),
     Balance((BalanceParams, Range<usize>)),
-    Include((IncludeParams<'a>, Range<usize>)),
+    Include((IncludeParams, Range<usize>)),
     Transaction((TransactionParams, Range<usize>)),
     Event((&'a str, Range<usize>)),
     Option((&'a str, Range<usize>)),
@@ -115,4 +79,90 @@ pub enum Statement<'a> {
     Comment(&'a str),
     Empty(&'a str),
     Other((&'a str, Range<usize>)),
+}
+
+pub type BeanInput<'b> = Stateful<LocatingSlice<Str<'b>>, &'b mut LedgerParserState>;
+
+pub fn new_beaninput<'s>(s: &'s str, state: &'s mut LedgerParserState) -> BeanInput<'s> {
+    Stateful {
+        input: LocatingSlice::new(s),
+        state: state,
+    }
+}
+
+#[derive(Debug)]
+pub struct LedgerParserState {
+    pub input_files: HashMap<PathBuf, (u32, bool)>,
+    pub current_file_no: u32,
+    pub current_position: u32,
+}
+
+impl LedgerParserState {
+    pub fn new() -> Self {
+        Self {
+            input_files: HashMap::new(),
+            current_file_no: 0,
+            current_position: 0,
+        }
+    }
+
+    pub fn insert(&mut self, f: PathBuf) {
+        if !self.input_files.contains_key(&f) {
+            let n = self.input_files.len();
+            self.input_files.insert(f, (n as u32, false));
+        }
+    }
+
+    pub fn set_read(&mut self, f: PathBuf) {
+        match self.input_files.get(&f) {
+            Some((n, _)) => {
+                self.input_files.insert(f, (*n, true));
+            }
+            None => {}
+        }
+    }
+
+    pub fn all_files_read(&self) -> bool {
+        for (_, (_, d)) in &self.input_files {
+            if !d {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn set_current_file_no(&mut self, n: u32) {
+        self.current_file_no = n;
+    }
+
+    pub fn increment_pos(&mut self) {
+        self.current_position += 1;
+    }
+}
+
+pub struct BeanFileStorage {
+    pub file_contents: HashMap<u32, String>,
+}
+
+impl BeanFileStorage {
+    pub fn new() -> Self {
+        Self {
+            file_contents: HashMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, c: String, f: u32) {
+        self.file_contents.insert(f, c);
+    }
+
+    pub fn get_ref<'s>(&'s mut self, f: u32) -> &'s str {
+        self.file_contents.get_mut(&f).unwrap()
+    }
+}
+
+pub fn get_contents(f: &Path) -> Result<String, Error> {
+    let mut s = String::new();
+    let mut infile = OpenOptions::new().read(true).open(f).unwrap();
+    let _ = infile.read_to_string(&mut s).unwrap();
+    Ok(s)
 }

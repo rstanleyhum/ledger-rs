@@ -1,8 +1,9 @@
 use std::ops::Range;
+use std::path::Path;
+use std::str;
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
-use winnow::LocatingSlice;
 use winnow::Parser;
 use winnow::Result;
 use winnow::ascii::alphanumeric1;
@@ -23,13 +24,12 @@ use winnow::stream::AsChar;
 use winnow::token::literal;
 use winnow::token::take_while;
 
-use crate::core::HeaderParams;
-use crate::core::PostingParams;
 use crate::core::{
-    BalanceParams, CloseParams, IncludeParams, OpenParams, Statement, TransactionParams,
+    BalanceParams, BeanInput, CloseParams, HeaderParams, IncludeParams, OpenParams, PostingParams,
+    Statement, TransactionParams,
 };
 
-fn date_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<NaiveDate> {
+fn date_string<'s>(i: &mut BeanInput<'s>) -> Result<NaiveDate> {
     seq!(_: take_while(4, |c: char| c.is_dec_digit()),
      _: '-',
      _: take_while(2, |c: char| c.is_dec_digit()),
@@ -41,7 +41,7 @@ fn date_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<NaiveDate> {
     .parse_next(i)
 }
 
-fn base_account_name<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
+fn base_account_name<'s>(i: &mut BeanInput<'s>) -> Result<&'s str> {
     alt((
         literal("Assets"),
         literal("Liabilities"),
@@ -52,52 +52,52 @@ fn base_account_name<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
     .parse_next(i)
 }
 
-fn account_name<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
+fn account_name<'s>(i: &mut BeanInput<'s>) -> Result<&'s str> {
     take_while(1.., |c: char| c.is_alphanumeric() || c == '-').parse_next(i)
 }
 
-fn subaccount<'s>(i: &mut LocatingSlice<&'s str>) -> Result<()> {
+fn subaccount<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     separated(1.., account_name, ":").parse_next(i)
 }
 
-fn full_account<'s>(i: &mut LocatingSlice<&'s str>) -> Result<String> {
+fn full_account<'s>(i: &mut BeanInput<'s>) -> Result<String> {
     separated_pair(base_account_name, ":", subaccount)
         .take()
         .map(|x| x.to_string())
         .parse_next(i)
 }
 
-fn quoted_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
+fn quoted_string<'s>(i: &mut BeanInput<'s>) -> Result<&'s str> {
     delimited('"', take_while(1.., |c| c != '"'), '"').parse_next(i)
 }
 
-fn narration<'s>(i: &mut LocatingSlice<&'s str>) -> Result<String> {
+fn narration<'s>(i: &mut BeanInput<'s>) -> Result<String> {
     quoted_string.take().map(|x| x.to_string()).parse_next(i)
 }
 
-fn comment<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
+fn comment<'s>(i: &mut BeanInput<'s>) -> Result<&'s str> {
     preceded(';', take_while(0.., |c: char| c != '\n' && c != '\r'))
         .take()
         .parse_next(i)
 }
 
-fn tag<'s>(i: &mut LocatingSlice<&'s str>) -> Result<String> {
+fn tag<'s>(i: &mut BeanInput<'s>) -> Result<String> {
     preceded('#', alphanumeric1)
         .take()
         .map(|x: &str| x.to_string())
         .parse_next(i)
 }
 
-fn tag_list<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<String>> {
+fn tag_list<'s>(i: &mut BeanInput<'s>) -> Result<Vec<String>> {
     separated(1.., tag, " ").parse_next(i)
 }
 
-fn optional_tag_list<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<String>> {
+fn opt_tag_list<'s>(i: &mut BeanInput<'s>) -> Result<Vec<String>> {
     let (_, r) = (space1, tag_list).parse_next(i)?;
     Ok(r)
 }
 
-fn decimal_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Decimal> {
+fn decimal_string<'s>(i: &mut BeanInput<'s>) -> Result<Decimal> {
     seq!(_: opt('-'),
      _: digit1,
      _: opt(preceded('.', digit1)))
@@ -106,7 +106,7 @@ fn decimal_string<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Decimal> {
     .parse_next(i)
 }
 
-fn commodity<'s>(i: &mut LocatingSlice<&'s str>) -> Result<String> {
+fn commodity<'s>(i: &mut BeanInput<'s>) -> Result<String> {
     take_while(1.., |c: char| {
         c.is_ascii_uppercase() || c.is_digit(10) || c == '_'
     })
@@ -115,14 +115,12 @@ fn commodity<'s>(i: &mut LocatingSlice<&'s str>) -> Result<String> {
     .parse_next(i)
 }
 
-fn commodity_position<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(Decimal, String)> {
+fn commodity_position<'s>(i: &mut BeanInput<'s>) -> Result<(Decimal, String)> {
     let (_, q, _, c) = (space1, decimal_string, space1, commodity).parse_next(i)?;
     Ok((q, c))
 }
 
-fn optional_commodity_position<'s>(
-    i: &mut LocatingSlice<&'s str>,
-) -> Result<(Option<Decimal>, Option<String>)> {
+fn opt_commodity_position<'s>(i: &mut BeanInput<'s>) -> Result<(Option<Decimal>, Option<String>)> {
     let r = opt(commodity_position).parse_next(i)?;
     match r {
         Some((q, c)) => Ok((Some(q), Some(c))),
@@ -130,7 +128,7 @@ fn optional_commodity_position<'s>(
     }
 }
 
-fn total_cost<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(Decimal, String)> {
+fn total_cost<'s>(i: &mut BeanInput<'s>) -> Result<(Decimal, String)> {
     let (_, _, _, q, _, c) = (
         space1,
         literal("@@"),
@@ -143,9 +141,7 @@ fn total_cost<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(Decimal, String)> {
     Ok((q, c))
 }
 
-fn optional_total_cost<'s>(
-    i: &mut LocatingSlice<&'s str>,
-) -> Result<(Option<Decimal>, Option<String>)> {
+fn opt_total_cost<'s>(i: &mut BeanInput<'s>) -> Result<(Option<Decimal>, Option<String>)> {
     let r = opt(total_cost).parse_next(i)?;
     match r {
         Some((q, c)) => Ok((Some(q), Some(c))),
@@ -153,7 +149,7 @@ fn optional_total_cost<'s>(
     }
 }
 
-fn open_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(OpenParams, Range<usize>)> {
+fn open_statement<'s>(i: &mut BeanInput<'s>) -> Result<(OpenParams, Range<usize>)> {
     seq!(OpenParams {
          date: date_string,
          _: space1,
@@ -166,7 +162,7 @@ fn open_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(OpenParams, Ran
     .parse_next(i)
 }
 
-fn close_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(CloseParams, Range<usize>)> {
+fn close_statement<'s>(i: &mut BeanInput<'s>) -> Result<(CloseParams, Range<usize>)> {
     seq!(CloseParams {
          date: date_string,
          _: space1,
@@ -179,7 +175,7 @@ fn close_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(CloseParams, R
     .parse_next(i)
 }
 
-fn balance_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(BalanceParams, Range<usize>)> {
+fn balance_statement<'s>(i: &mut BeanInput<'s>) -> Result<(BalanceParams, Range<usize>)> {
     seq!(BalanceParams {
          date: date_string,
          _: space1,
@@ -196,45 +192,57 @@ fn balance_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(BalanceParam
     .parse_next(i)
 }
 
-fn include_statement<'s>(
-    i: &mut LocatingSlice<&'s str>,
-) -> Result<(IncludeParams<'s>, Range<usize>)> {
-    seq!(IncludeParams {
-         _: literal("include"),
-         _: space1,
-         path: quoted_string,
-         _: space0,
-         _: opt(comment)})
-    .with_span()
-    .parse_next(i)
+fn include_statement<'s>(i: &mut BeanInput<'s>) -> Result<(IncludeParams, Range<usize>)> {
+    let ((_, _, path, _, _), r) = (
+        literal("include"),
+        space1,
+        quoted_string,
+        space0,
+        opt(comment),
+    )
+        .with_span()
+        .parse_next(i)?;
+    let p = Path::new(path).to_path_buf();
+    i.state.insert(p);
+    Ok((
+        IncludeParams {
+            start: r.start as u32,
+            end: r.end as u32,
+            path: path.to_string(),
+        },
+        r,
+    ))
 }
 
-fn transaction_header<'s>(i: &mut LocatingSlice<&'s str>) -> Result<HeaderParams> {
+fn transaction_header<'s>(i: &mut BeanInput<'s>) -> Result<HeaderParams> {
     let (date, _, _, _, narration, tags, _, _) = (
         date_string,
         space1,
         literal("*"),
         space1,
         narration,
-        opt(optional_tag_list),
+        opt(opt_tag_list),
         space0,
         opt(comment),
     )
         .parse_next(i)?;
     Ok(HeaderParams {
+        transaction_no: i.state.current_position,
+        file_no: i.state.current_file_no,
         start: 0,
+        end: 0,
         date,
         narration,
         tags,
     })
 }
 
-fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams> {
+fn posting<'s>(i: &mut BeanInput<'s>) -> Result<PostingParams> {
     let (_, account, (cp_q, cp_c), (tc_q, tc_c), _, _) = (
         literal("  "),
         full_account,
-        optional_commodity_position,
-        optional_total_cost,
+        opt_commodity_position,
+        opt_total_cost,
         space0,
         opt(comment),
     )
@@ -242,6 +250,8 @@ fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams> {
 
     if tc_q.is_none() & tc_c.is_none() {
         Ok(PostingParams {
+            transaction_no: i.state.current_position,
+            file_no: i.state.current_file_no,
             start: 0,
             account,
             cp_q,
@@ -251,6 +261,8 @@ fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams> {
         })
     } else {
         Ok(PostingParams {
+            transaction_no: i.state.current_position,
+            file_no: i.state.current_file_no,
             start: 0,
             account,
             cp_q,
@@ -261,9 +273,7 @@ fn posting<'s>(i: &mut LocatingSlice<&'s str>) -> Result<PostingParams> {
     }
 }
 
-fn transaction_statement<'s>(
-    i: &mut LocatingSlice<&'s str>,
-) -> Result<(TransactionParams, Range<usize>)> {
+fn transaction_statement<'s>(i: &mut BeanInput<'s>) -> Result<(TransactionParams, Range<usize>)> {
     let (mut t, r) = seq!(TransactionParams {
         header: transaction_header,
         _: line_ending,
@@ -272,11 +282,13 @@ fn transaction_statement<'s>(
     .with_span()
     .parse_next(i)?;
     t.header.start = r.start as u32;
+    t.header.end = r.end as u32;
     t.postings.iter_mut().for_each(|x| x.start = r.start as u32);
+    i.state.increment_pos();
     Ok((t, r))
 }
 
-fn event_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(&'s str, Range<usize>)> {
+fn event_statement<'s>(i: &mut BeanInput<'s>) -> Result<(&'s str, Range<usize>)> {
     seq!(_: date_string,
          _: space1,
          _: literal("event"),
@@ -291,7 +303,7 @@ fn event_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(&'s str, Range
     .parse_next(i)
 }
 
-fn option_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(&'s str, Range<usize>)> {
+fn option_statement<'s>(i: &mut BeanInput<'s>) -> Result<(&'s str, Range<usize>)> {
     seq!(_: literal("option"),
          _: space1,
          _: quoted_string,
@@ -304,7 +316,7 @@ fn option_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(&'s str, Rang
     .parse_next(i)
 }
 
-fn custom_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(&'s str, Range<usize>)> {
+fn custom_statement<'s>(i: &mut BeanInput<'s>) -> Result<(&'s str, Range<usize>)> {
     seq!(_: date_string,
          _: space1,
          _: literal("custom"),
@@ -314,22 +326,22 @@ fn custom_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(&'s str, Rang
     .parse_next(i)
 }
 
-fn comment_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
+fn comment_statement<'s>(i: &mut BeanInput<'s>) -> Result<&'s str> {
     seq!(_: space0,
          _: comment)
     .take()
     .parse_next(i)
 }
 
-fn empty_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<&'s str> {
+fn empty_statement<'s>(i: &mut BeanInput<'s>) -> Result<&'s str> {
     space1.take().parse_next(i)
 }
 
-fn other_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<(&'s str, Range<usize>)> {
+fn other_statement<'s>(i: &mut BeanInput<'s>) -> Result<(&'s str, Range<usize>)> {
     till_line_ending.with_span().parse_next(i)
 }
 
-fn active_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Statement<'s>> {
+fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<Statement<'s>> {
     alt((
         open_statement.map(Statement::Open),
         close_statement.map(Statement::Close),
@@ -346,15 +358,15 @@ fn active_statement<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Statement<'s>>
     .parse_next(i)
 }
 
-fn active_statements<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<Statement<'s>>> {
+fn active_statements<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement<'s>>> {
     separated(0.., active_statement, line_ending).parse_next(i)
 }
 
-fn full_file<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<Statement<'s>>> {
+fn full_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement<'s>>> {
     let (active_statements, _) = (active_statements, eof).parse_next(i)?;
     Ok(active_statements)
 }
 
-pub fn parse_file<'s>(i: &mut LocatingSlice<&'s str>) -> Result<Vec<Statement<'s>>> {
+pub fn parse_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement<'s>>> {
     full_file.parse_next(i)
 }

@@ -1,8 +1,11 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use ledger_rs_core::core::{BeanFile, BeanFileParse, Statement};
+use ledger_rs_core::{
+    core::{BeanFileStorage, LedgerParserState, get_contents, new_beaninput},
+    parse::parse_file,
+};
 
 #[derive(Parser)]
 #[command(version, about, long_about=None)]
@@ -13,60 +16,47 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    Read { filepath: PathBuf },
+    Readall { filepath: PathBuf },
 }
 
 fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Read { filepath } => read(filepath),
+        Command::Readall { filepath } => readall(filepath),
     }
 }
 
-fn read(f: PathBuf) {
-    let base = f.clone();
-    let first = BeanFile::new(f);
+fn readall(f: PathBuf) {
+    let mut state = LedgerParserState::new();
 
-    let mut p = BeanFileParse::new(first);
-    p.statements = p.beanfile.parse();
+    state.insert(f);
 
-    let include_paths: Vec<BeanFileParse> = p
-        .statements
-        .iter()
-        .filter_map(|x| match x {
-            Statement::Include(y) => Some(y),
-            _ => None,
-        })
-        .map(|x| &x.0)
-        .map(|x| {
-            let b = Path::new(x.path);
-            match base.parent() {
-                Some(p) => p.join(b),
-                None => b.to_path_buf(),
+    let mut storage = BeanFileStorage::new();
+
+    while !state.all_files_read() {
+        let mut temp: Vec<(u32, PathBuf, String)> = vec![];
+
+        for (p, (n, _)) in &state.input_files {
+            let s = get_contents(p.as_path().as_ref());
+            match s {
+                Ok(b) => {
+                    temp.push((*n, p.clone().to_path_buf(), b));
+                }
+                Err(x) => println!("{:?}", x),
             }
-        })
-        .map(|x| BeanFile::new(x))
-        .map(|x| BeanFileParse::new(x))
-        //.map(|x| format!("{}{}", base_directory, x.path))
-        .collect();
+        }
 
-    for mut i in include_paths {
-        println!("{:?}", i.beanfile.filepath);
-        i.statements = i.beanfile.parse();
-        // i.statements
-        //     .iter()
-        //     .filter_map(|x| match x {
-        //         Statement::Other(y) => Some(y),
-        //         _ => None,
-        //     })
-        //     .filter(|x| **x != "")
-        //     .for_each(|x| println!("{:?}", x));
-        i.statements.iter().for_each(|x| println!("{:?}", x));
-        println!("-----");
+        for (n, p, b) in temp {
+            storage.add(b, n);
+            let input = storage.get_ref(n);
+            state.set_current_file_no(n);
+            let mut beaninput = new_beaninput(input, &mut state);
+            let _ = parse_file(&mut beaninput).unwrap();
+            state.set_read(p);
+        }
     }
 
-    //include_paths.iter().for_each(|x| println!("{}", x));
-
-    //p.statements.iter().for_each(|x| println!("{:?}", x));
+    println!("{:?}", state);
+    println!("{:?}", storage.file_contents.len());
 }
