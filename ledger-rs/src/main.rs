@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use ledger_rs_core::{
-    core::{BeanFileStorage, LedgerParserState, get_contents, new_beaninput},
+    core::{BeanFileStorage, LedgerParserState, Statement, get_contents, new_beaninput},
     parse::parse_file,
 };
 
@@ -34,6 +34,8 @@ fn readall(f: PathBuf) {
 
     let mut storage = BeanFileStorage::new();
 
+    let mut all_statements: Vec<Statement> = vec![];
+
     while !state.all_files_read() {
         let mut temp: Vec<(u32, PathBuf, String)> = vec![];
 
@@ -52,11 +54,14 @@ fn readall(f: PathBuf) {
             let input = storage.get_ref(n);
             state.set_current_file_no(n);
             let mut beaninput = new_beaninput(input, &mut state);
-            let _ = parse_file(&mut beaninput).unwrap();
+            let mut s = parse_file(&mut beaninput).unwrap();
+            all_statements.append(&mut s);
             state.set_read(p);
         }
     }
 
     println!("{:?}", state);
     println!("{:?}", storage.file_contents.len());
+
+    all_statements.iter().for_each(|x| println!("{:?}", x));
 }

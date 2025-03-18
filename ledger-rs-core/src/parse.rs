@@ -288,7 +288,7 @@ fn transaction_statement<'s>(i: &mut BeanInput<'s>) -> Result<(TransactionParams
     Ok((t, r))
 }
 
-fn event_statement<'s>(i: &mut BeanInput<'s>) -> Result<(&'s str, Range<usize>)> {
+fn event_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
     seq!(_: date_string,
          _: space1,
          _: literal("event"),
@@ -299,11 +299,11 @@ fn event_statement<'s>(i: &mut BeanInput<'s>) -> Result<(&'s str, Range<usize>)>
          _: space0,
          _: opt(comment))
     .take()
-    .with_span()
+    .span()
     .parse_next(i)
 }
 
-fn option_statement<'s>(i: &mut BeanInput<'s>) -> Result<(&'s str, Range<usize>)> {
+fn option_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
     seq!(_: literal("option"),
          _: space1,
          _: quoted_string,
@@ -312,36 +312,37 @@ fn option_statement<'s>(i: &mut BeanInput<'s>) -> Result<(&'s str, Range<usize>)
          _: space0,
          _: opt(comment))
     .take()
-    .with_span()
+    .span()
     .parse_next(i)
 }
 
-fn custom_statement<'s>(i: &mut BeanInput<'s>) -> Result<(&'s str, Range<usize>)> {
+fn custom_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
     seq!(_: date_string,
          _: space1,
          _: literal("custom"),
          _: till_line_ending)
     .take()
-    .with_span()
+    .span()
     .parse_next(i)
 }
 
-fn comment_statement<'s>(i: &mut BeanInput<'s>) -> Result<&'s str> {
+fn comment_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
     seq!(_: space0,
          _: comment)
     .take()
+    .span()
     .parse_next(i)
 }
 
-fn empty_statement<'s>(i: &mut BeanInput<'s>) -> Result<&'s str> {
-    space1.take().parse_next(i)
+fn empty_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
+    space1.take().span().parse_next(i)
 }
 
-fn other_statement<'s>(i: &mut BeanInput<'s>) -> Result<(&'s str, Range<usize>)> {
-    till_line_ending.with_span().parse_next(i)
+fn other_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
+    till_line_ending.span().parse_next(i)
 }
 
-fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<Statement<'s>> {
+fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<Statement> {
     alt((
         open_statement.map(Statement::Open),
         close_statement.map(Statement::Close),
@@ -358,15 +359,15 @@ fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<Statement<'s>> {
     .parse_next(i)
 }
 
-fn active_statements<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement<'s>>> {
+fn active_statements<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement>> {
     separated(0.., active_statement, line_ending).parse_next(i)
 }
 
-fn full_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement<'s>>> {
+fn full_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement>> {
     let (active_statements, _) = (active_statements, eof).parse_next(i)?;
     Ok(active_statements)
 }
 
-pub fn parse_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement<'s>>> {
+pub fn parse_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement>> {
     full_file.parse_next(i)
 }

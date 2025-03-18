@@ -67,18 +67,18 @@ pub struct TransactionParams {
 }
 
 #[derive(PartialEq, Debug)]
-pub enum Statement<'a> {
+pub enum Statement {
     Open((OpenParams, Range<usize>)),
     Close((CloseParams, Range<usize>)),
     Balance((BalanceParams, Range<usize>)),
     Include((IncludeParams, Range<usize>)),
     Transaction((TransactionParams, Range<usize>)),
-    Event((&'a str, Range<usize>)),
-    Option((&'a str, Range<usize>)),
-    Custom((&'a str, Range<usize>)),
-    Comment(&'a str),
-    Empty(&'a str),
-    Other((&'a str, Range<usize>)),
+    Event(Range<usize>),
+    Option(Range<usize>),
+    Custom(Range<usize>),
+    Comment(Range<usize>),
+    Empty(Range<usize>),
+    Other(Range<usize>),
 }
 
 pub type BeanInput<'b> = Stateful<LocatingSlice<Str<'b>>, &'b mut LedgerParserState>;
