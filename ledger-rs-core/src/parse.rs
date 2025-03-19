@@ -242,20 +242,20 @@ fn include_statement<'s>(i: &mut BeanInput<'s>) -> Result<(IncludeParams, Range<
     )
         .with_span()
         .parse_next(i)?;
+    let include_statement_no = i.state.statement_no(r.start as u32);
     let p = Path::new(path).to_path_buf();
     i.state.insert(p.clone());
-    let in_contents = get_contents(p.as_path()).unwrap();
+    let (in_contents, total_n) = get_contents(p.as_path()).unwrap();
     let mut input = new_beaninput(&in_contents, i.state);
-    let s = parse_file(&mut input)?;
-    i.state.finished();
+    parse_file(&mut input)?;
+    i.state.finished_include(total_n);
     Ok((
         IncludeParams {
-            statement_no: i.state.statement_no(r.start as u32),
+            statement_no: include_statement_no,
             file_no: i.state.get_file_no().unwrap(),
             start: r.start as u32,
             end: r.end as u32,
             path: path.to_string(),
-            statements: s,
         },
         r,
     ))
@@ -388,8 +388,8 @@ fn other_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
     till_line_ending.span().parse_next(i)
 }
 
-fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<Statement> {
-    alt((
+fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
+    let s = alt((
         open_statement.map(Statement::Open),
         close_statement.map(Statement::Close),
         balance_statement.map(Statement::Balance),
@@ -402,18 +402,21 @@ fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<Statement> {
         empty_statement.map(Statement::Empty),
         other_statement.map(Statement::Other),
     ))
-    .parse_next(i)
+    .parse_next(i)?;
+    i.state.statements.push(s);
+    Ok(())
 }
 
-fn active_statements<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement>> {
+fn active_statements<'s>(i: &mut BeanInput<'s>) -> Result<Vec<()>> {
     separated(0.., active_statement, line_ending).parse_next(i)
 }
 
-fn full_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement>> {
+fn full_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<()>> {
     let (active_statements, _) = (active_statements, eof).parse_next(i)?;
     Ok(active_statements)
 }
 
-pub fn parse_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<Statement>> {
-    full_file.parse_next(i)
+pub fn parse_file<'s>(i: &mut BeanInput<'s>) -> Result<()> {
+    full_file.parse_next(i)?;
+    Ok(())
 }

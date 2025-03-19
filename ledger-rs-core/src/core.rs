@@ -49,7 +49,6 @@ pub struct IncludeParams {
     pub start: u32,
     pub end: u32,
     pub path: String,
-    pub statements: Vec<Statement>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -112,6 +111,7 @@ pub struct LedgerParserState {
     current_file_no: Vec<u32>,
     previous_position: HashMap<u32, u32>,
     statement_no: u32,
+    pub statements: Vec<Statement>,
 }
 
 impl LedgerParserState {
@@ -121,6 +121,7 @@ impl LedgerParserState {
             current_file_no: vec![],
             previous_position: HashMap::new(),
             statement_no: 0,
+            statements: vec![],
         }
     }
 
@@ -153,14 +154,21 @@ impl LedgerParserState {
         }
     }
 
-    pub fn finished(&mut self) {
+    pub fn finished_include(&mut self, n: u32) {
+        let prev = self
+            .previous_position
+            .get(&self.get_file_no().unwrap())
+            .unwrap();
+        self.statement_no = self.statement_no + n - *prev;
+        self.previous_position
+            .insert(*&self.get_file_no().unwrap(), n);
         self.current_file_no.pop();
     }
 }
 
-pub fn get_contents(f: &Path) -> Result<String, Error> {
+pub fn get_contents(f: &Path) -> Result<(String, u32), Error> {
     let mut s = String::new();
     let mut infile = OpenOptions::new().read(true).open(f).unwrap();
-    let _ = infile.read_to_string(&mut s).unwrap();
-    Ok(s)
+    let n = infile.read_to_string(&mut s).unwrap();
+    Ok((s, n as u32))
 }
