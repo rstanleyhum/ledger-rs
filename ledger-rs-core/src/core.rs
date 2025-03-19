@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     fs::OpenOptions,
     io::{Error, Read},
-    ops::Range,
     path::{Path, PathBuf},
 };
 
@@ -11,44 +10,29 @@ use rust_decimal::Decimal;
 use winnow::{LocatingSlice, Stateful, Str};
 
 #[derive(PartialEq, Debug)]
-pub struct OpenParams {
-    pub statement_no: u32,
-    pub file_no: u32,
-    pub start: u32,
-    pub end: u32,
-    pub date: NaiveDate,
-    pub account: String,
-}
-
-#[derive(PartialEq, Debug)]
-pub struct CloseParams {
-    pub statement_no: u32,
-    pub file_no: u32,
-    pub start: u32,
-    pub end: u32,
-    pub date: NaiveDate,
-    pub account: String,
-}
-
-#[derive(PartialEq, Debug)]
-pub struct BalanceParams {
-    pub statement_no: u32,
-    pub file_no: u32,
-    pub start: u32,
-    pub end: u32,
-    pub date: NaiveDate,
-    pub account: String,
-    pub position: Decimal,
-    pub commodity: String,
-}
-
-#[derive(PartialEq, Debug)]
 pub struct IncludeParams {
     pub statement_no: u32,
     pub file_no: u32,
     pub start: u32,
     pub end: u32,
     pub path: String,
+}
+
+pub const OPEN_ACTION: u32 = 0;
+pub const BALANCE_ACTION: u32 = 1;
+pub const CLOSE_ACTION: u32 = 2;
+
+#[derive(PartialEq, Debug)]
+pub struct VerificationParams {
+    pub statement_no: u32,
+    pub file_no: u32,
+    pub start: u32,
+    pub end: u32,
+    pub date: NaiveDate,
+    pub action: u32, // Open, Balance, CLose
+    pub account: String,
+    pub quantity: Option<Decimal>,
+    pub commodity: Option<String>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -75,25 +59,20 @@ pub struct PostingParams {
     pub tc_c: Option<String>,
 }
 
-#[derive(PartialEq, Debug)]
-pub struct TransactionParams {
-    pub header: HeaderParams,
-    pub postings: Vec<PostingParams>,
-}
+pub const EVENT_ACTION: u32 = 3;
+pub const OPTION_ACTION: u32 = 4;
+pub const CUSTOM_ACTION: u32 = 5;
 
 #[derive(PartialEq, Debug)]
-pub enum Statement {
-    Open((OpenParams, Range<usize>)),
-    Close((CloseParams, Range<usize>)),
-    Balance((BalanceParams, Range<usize>)),
-    Include((IncludeParams, Range<usize>)),
-    Transaction((TransactionParams, Range<usize>)),
-    Event(Range<usize>),
-    Option(Range<usize>),
-    Custom(Range<usize>),
-    Comment(Range<usize>),
-    Empty(Range<usize>),
-    Other(Range<usize>),
+pub struct InfoParams {
+    pub statement_no: u32,
+    pub file_no: u32,
+    pub start: u32,
+    pub end: u32,
+    pub date: Option<NaiveDate>,
+    pub action: u32, // Event, Option, Custom
+    pub attribute: Option<String>,
+    pub value: String,
 }
 
 pub type BeanInput<'b> = Stateful<LocatingSlice<Str<'b>>, &'b mut LedgerParserState>;
@@ -109,9 +88,14 @@ pub fn new_beaninput<'s>(s: &'s str, state: &'s mut LedgerParserState) -> BeanIn
 pub struct LedgerParserState {
     pub input_files: HashMap<PathBuf, u32>,
     current_file_no: Vec<u32>,
+    current_filepath: Vec<PathBuf>,
     previous_position: HashMap<u32, u32>,
     statement_no: u32,
-    pub statements: Vec<Statement>,
+    pub transactions: Vec<HeaderParams>,
+    pub postings: Vec<PostingParams>,
+    pub verifications: Vec<VerificationParams>,
+    pub includes: Vec<IncludeParams>,
+    pub informationals: Vec<InfoParams>,
 }
 
 impl LedgerParserState {
@@ -119,17 +103,23 @@ impl LedgerParserState {
         Self {
             input_files: HashMap::new(),
             current_file_no: vec![],
+            current_filepath: vec![],
             previous_position: HashMap::new(),
             statement_no: 0,
-            statements: vec![],
+            transactions: vec![],
+            postings: vec![],
+            verifications: vec![],
+            includes: vec![],
+            informationals: vec![],
         }
     }
 
     pub fn insert(&mut self, f: PathBuf) {
         if !self.input_files.contains_key(&f) {
             let n = self.input_files.len();
-            self.input_files.insert(f, n as u32);
+            self.input_files.insert(f.clone(), n as u32);
             self.current_file_no.push(n as u32);
+            self.current_filepath.push(f);
             self.previous_position.insert(n as u32, 0);
         }
     }
@@ -143,6 +133,15 @@ impl LedgerParserState {
         self.previous_position
             .insert(self.get_file_no().unwrap(), r_start);
         self.statement_no
+    }
+
+    pub fn get_current_filepath(&self) -> Option<PathBuf> {
+        let current = self.current_file_no.len();
+        if current == 0 {
+            None
+        } else {
+            Some(self.current_filepath[current - 1].clone())
+        }
     }
 
     pub fn get_file_no(&self) -> Option<u32> {

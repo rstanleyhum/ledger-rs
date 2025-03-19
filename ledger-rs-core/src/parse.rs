@@ -1,4 +1,3 @@
-use std::ops::Range;
 use std::path::Path;
 use std::str;
 
@@ -24,12 +23,17 @@ use winnow::stream::AsChar;
 use winnow::token::literal;
 use winnow::token::take_while;
 
+use crate::core::BALANCE_ACTION;
+use crate::core::CLOSE_ACTION;
+use crate::core::CUSTOM_ACTION;
+use crate::core::EVENT_ACTION;
+use crate::core::InfoParams;
+use crate::core::OPEN_ACTION;
+use crate::core::OPTION_ACTION;
+use crate::core::VerificationParams;
 use crate::core::get_contents;
 use crate::core::new_beaninput;
-use crate::core::{
-    BalanceParams, BeanInput, CloseParams, HeaderParams, IncludeParams, OpenParams, PostingParams,
-    Statement, TransactionParams,
-};
+use crate::core::{BeanInput, HeaderParams, IncludeParams, PostingParams};
 
 fn date_string<'s>(i: &mut BeanInput<'s>) -> Result<NaiveDate> {
     seq!(_: take_while(4, |c: char| c.is_dec_digit()),
@@ -151,7 +155,7 @@ fn opt_total_cost<'s>(i: &mut BeanInput<'s>) -> Result<(Option<Decimal>, Option<
     }
 }
 
-fn open_statement<'s>(i: &mut BeanInput<'s>) -> Result<(OpenParams, Range<usize>)> {
+fn open_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     let ((date, _, _, _, account, _, _), r) = (
         date_string,
         space1,
@@ -163,20 +167,22 @@ fn open_statement<'s>(i: &mut BeanInput<'s>) -> Result<(OpenParams, Range<usize>
     )
         .with_span()
         .parse_next(i)?;
-    Ok((
-        OpenParams {
-            statement_no: i.state.statement_no(r.start as u32),
-            file_no: i.state.get_file_no().unwrap(),
-            start: r.start as u32,
-            end: r.end as u32,
-            date,
-            account,
-        },
-        r,
-    ))
+    let o = VerificationParams {
+        statement_no: i.state.statement_no(r.start as u32),
+        file_no: i.state.get_file_no().unwrap(),
+        start: r.start as u32,
+        end: r.end as u32,
+        date,
+        action: OPEN_ACTION,
+        account,
+        quantity: None,
+        commodity: None,
+    };
+    i.state.verifications.push(o);
+    Ok(())
 }
 
-fn close_statement<'s>(i: &mut BeanInput<'s>) -> Result<(CloseParams, Range<usize>)> {
+fn close_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     let ((date, _, _, _, account, _, _), r) = (
         date_string,
         space1,
@@ -188,20 +194,22 @@ fn close_statement<'s>(i: &mut BeanInput<'s>) -> Result<(CloseParams, Range<usiz
     )
         .with_span()
         .parse_next(i)?;
-    Ok((
-        CloseParams {
-            statement_no: i.state.statement_no(r.start as u32),
-            file_no: i.state.get_file_no().unwrap(),
-            start: r.start as u32,
-            end: r.end as u32,
-            date,
-            account,
-        },
-        r,
-    ))
+    let c = VerificationParams {
+        statement_no: i.state.statement_no(r.start as u32),
+        file_no: i.state.get_file_no().unwrap(),
+        start: r.start as u32,
+        end: r.end as u32,
+        date,
+        action: CLOSE_ACTION,
+        account,
+        quantity: None,
+        commodity: None,
+    };
+    i.state.verifications.push(c);
+    Ok(())
 }
 
-fn balance_statement<'s>(i: &mut BeanInput<'s>) -> Result<(BalanceParams, Range<usize>)> {
+fn balance_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     let ((date, _, _, _, account, _, position, _, commodity, _, _), r) = (
         date_string,
         space1,
@@ -217,22 +225,22 @@ fn balance_statement<'s>(i: &mut BeanInput<'s>) -> Result<(BalanceParams, Range<
     )
         .with_span()
         .parse_next(i)?;
-    Ok((
-        BalanceParams {
-            statement_no: i.state.statement_no(r.start as u32),
-            file_no: i.state.get_file_no().unwrap(),
-            start: r.start as u32,
-            end: r.end as u32,
-            date,
-            account,
-            position,
-            commodity,
-        },
-        r,
-    ))
+    let b = VerificationParams {
+        statement_no: i.state.statement_no(r.start as u32),
+        file_no: i.state.get_file_no().unwrap(),
+        start: r.start as u32,
+        end: r.end as u32,
+        date,
+        action: BALANCE_ACTION,
+        account,
+        quantity: Some(position),
+        commodity: Some(commodity),
+    };
+    i.state.verifications.push(b);
+    Ok(())
 }
 
-fn include_statement<'s>(i: &mut BeanInput<'s>) -> Result<(IncludeParams, Range<usize>)> {
+fn include_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     let ((_, _, path, _, _), r) = (
         literal("include"),
         space1,
@@ -244,24 +252,25 @@ fn include_statement<'s>(i: &mut BeanInput<'s>) -> Result<(IncludeParams, Range<
         .parse_next(i)?;
     let include_statement_no = i.state.statement_no(r.start as u32);
     let p = Path::new(path).to_path_buf();
+    let _current_p = i.state.get_current_filepath().unwrap();
+
     i.state.insert(p.clone());
     let (in_contents, total_n) = get_contents(p.as_path()).unwrap();
     let mut input = new_beaninput(&in_contents, i.state);
     parse_file(&mut input)?;
     i.state.finished_include(total_n);
-    Ok((
-        IncludeParams {
-            statement_no: include_statement_no,
-            file_no: i.state.get_file_no().unwrap(),
-            start: r.start as u32,
-            end: r.end as u32,
-            path: path.to_string(),
-        },
-        r,
-    ))
+    let s = IncludeParams {
+        statement_no: include_statement_no,
+        file_no: i.state.get_file_no().unwrap(),
+        start: r.start as u32,
+        end: r.end as u32,
+        path: path.to_string(),
+    };
+    i.state.includes.push(s);
+    Ok(())
 }
 
-fn transaction_header<'s>(i: &mut BeanInput<'s>) -> Result<HeaderParams> {
+fn transaction_header<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     let ((date, _, _, _, narration, tags, _, _), r) = (
         date_string,
         space1,
@@ -274,7 +283,7 @@ fn transaction_header<'s>(i: &mut BeanInput<'s>) -> Result<HeaderParams> {
     )
         .with_span()
         .parse_next(i)?;
-    Ok(HeaderParams {
+    let h = HeaderParams {
         statement_no: i.state.statement_no(r.start as u32),
         file_no: i.state.get_file_no().unwrap(),
         start: r.start as u32,
@@ -282,10 +291,12 @@ fn transaction_header<'s>(i: &mut BeanInput<'s>) -> Result<HeaderParams> {
         date,
         narration,
         tags,
-    })
+    };
+    i.state.transactions.push(h);
+    Ok(())
 }
 
-fn posting<'s>(i: &mut BeanInput<'s>) -> Result<PostingParams> {
+fn posting<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     let ((_, account, (cp_q, cp_c), (tc_q, tc_c), _, _), r) = (
         literal("  "),
         full_account,
@@ -297,113 +308,137 @@ fn posting<'s>(i: &mut BeanInput<'s>) -> Result<PostingParams> {
         .with_span()
         .parse_next(i)?;
 
-    if tc_q.is_none() & tc_c.is_none() {
-        Ok(PostingParams {
-            statement_no: i.state.statement_no(r.start as u32),
-            file_no: i.state.get_file_no().unwrap(),
-            start: r.start as u32,
-            end: r.end as u32,
-            account,
-            cp_q,
-            cp_c: cp_c.clone(),
-            tc_q: cp_q,
-            tc_c: cp_c,
-        })
-    } else {
-        Ok(PostingParams {
-            statement_no: i.state.statement_no(r.start as u32),
-            file_no: i.state.get_file_no().unwrap(),
-            start: r.start as u32,
-            end: r.end as u32,
-            account,
-            cp_q,
-            cp_c,
-            tc_q,
-            tc_c,
-        })
+    let mut p = PostingParams {
+        statement_no: i.state.statement_no(r.start as u32),
+        file_no: i.state.get_file_no().unwrap(),
+        start: r.start as u32,
+        end: r.end as u32,
+        account,
+        cp_q,
+        cp_c: cp_c.clone(),
+        tc_q: cp_q,
+        tc_c: cp_c,
+    };
+    if !(tc_q.is_none() & tc_c.is_none()) {
+        p.tc_q = tc_q;
+        p.tc_c = tc_c;
     }
+    i.state.postings.push(p);
+    Ok(())
 }
 
-fn transaction_statement<'s>(i: &mut BeanInput<'s>) -> Result<(TransactionParams, Range<usize>)> {
-    seq!(TransactionParams {
-        header: transaction_header,
-        _: line_ending,
-        postings: separated(1.., posting, line_ending),
-    })
-    .with_span()
-    .parse_next(i)
+fn transaction_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
+    let (_, _, _): ((), &str, Vec<()>) = (
+        transaction_header,
+        line_ending,
+        separated(1.., posting, line_ending),
+    )
+        .parse_next(i)?;
+    Ok(())
 }
 
-fn event_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
-    seq!(_: date_string,
-         _: space1,
-         _: literal("event"),
-         _: space1,
-         _: quoted_string,
-         _: space1,
-         _: quoted_string,
-         _: space0,
-         _: opt(comment))
-    .take()
-    .span()
-    .parse_next(i)
+fn event_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
+    let ((d, _, _, _, a, _, v, _, _), r) = (
+        date_string,
+        space1,
+        literal("event"),
+        space1,
+        quoted_string,
+        space1,
+        quoted_string,
+        space0,
+        opt(comment),
+    )
+        .with_span()
+        .parse_next(i)?;
+    let s = InfoParams {
+        statement_no: i.state.statement_no(r.start as u32),
+        file_no: i.state.get_file_no().unwrap(),
+        start: r.start as u32,
+        end: r.end as u32,
+        date: Some(d),
+        action: EVENT_ACTION,
+        attribute: Some(a.to_string()),
+        value: v.to_string(),
+    };
+    i.state.informationals.push(s);
+    Ok(())
 }
 
-fn option_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
-    seq!(_: literal("option"),
-         _: space1,
-         _: quoted_string,
-         _: space1,
-         _: quoted_string,
-         _: space0,
-         _: opt(comment))
-    .take()
-    .span()
-    .parse_next(i)
+fn option_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
+    let ((_, _, a, _, v, _, _), r) = (
+        literal("option"),
+        space1,
+        quoted_string,
+        space1,
+        quoted_string,
+        space0,
+        opt(comment),
+    )
+        .with_span()
+        .parse_next(i)?;
+    let s = InfoParams {
+        statement_no: i.state.statement_no(r.start as u32),
+        file_no: i.state.get_file_no().unwrap(),
+        start: r.start as u32,
+        end: r.end as u32,
+        date: None,
+        action: OPTION_ACTION,
+        attribute: Some(a.to_string()),
+        value: v.to_string(),
+    };
+    i.state.informationals.push(s);
+    Ok(())
 }
 
-fn custom_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
-    seq!(_: date_string,
-         _: space1,
-         _: literal("custom"),
-         _: till_line_ending)
-    .take()
-    .span()
-    .parse_next(i)
+fn custom_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
+    let ((d, _, _, v), r) = (date_string, space1, literal("custom"), till_line_ending)
+        .with_span()
+        .parse_next(i)?;
+    let s = InfoParams {
+        statement_no: i.state.statement_no(r.start as u32),
+        file_no: i.state.get_file_no().unwrap(),
+        start: r.start as u32,
+        end: r.end as u32,
+        date: Some(d),
+        action: CUSTOM_ACTION,
+        attribute: None,
+        value: v.to_string(),
+    };
+    i.state.informationals.push(s);
+    Ok(())
 }
 
-fn comment_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
-    seq!(_: space0,
-         _: comment)
-    .take()
-    .span()
-    .parse_next(i)
+fn comment_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
+    (space0, comment).parse_next(i)?;
+    Ok(())
 }
 
-fn empty_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
-    space1.take().span().parse_next(i)
+fn empty_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
+    space1.parse_next(i)?;
+    Ok(())
 }
 
-fn other_statement<'s>(i: &mut BeanInput<'s>) -> Result<Range<usize>> {
-    till_line_ending.span().parse_next(i)
+fn other_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
+    till_line_ending.span().parse_next(i)?;
+    Ok(())
 }
 
 fn active_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
-    let s = alt((
-        open_statement.map(Statement::Open),
-        close_statement.map(Statement::Close),
-        balance_statement.map(Statement::Balance),
-        include_statement.map(Statement::Include),
-        transaction_statement.map(Statement::Transaction),
-        event_statement.map(Statement::Event),
-        option_statement.map(Statement::Option),
-        custom_statement.map(Statement::Custom),
-        comment_statement.map(Statement::Comment),
-        empty_statement.map(Statement::Empty),
-        other_statement.map(Statement::Other),
+    alt((
+        open_statement,
+        close_statement,
+        balance_statement,
+        include_statement,
+        transaction_statement,
+        event_statement,
+        option_statement,
+        custom_statement,
+        comment_statement,
+        empty_statement,
+        other_statement,
     ))
     .parse_next(i)?;
-    i.state.statements.push(s);
     Ok(())
 }
 
