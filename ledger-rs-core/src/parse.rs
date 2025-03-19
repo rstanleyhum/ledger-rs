@@ -252,10 +252,15 @@ fn include_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
         .parse_next(i)?;
     let include_statement_no = i.state.statement_no(r.start as u32);
     let p = Path::new(path).to_path_buf();
-    let _current_p = i.state.get_current_filepath().unwrap();
-
-    i.state.insert(p.clone());
-    let (in_contents, total_n) = get_contents(p.as_path()).unwrap();
+    let current_p = i.state.get_current_filepath().unwrap();
+    let in_filepath = if p.is_absolute() {
+        p.clone()
+    } else {
+        let parent = current_p.parent().unwrap();
+        parent.join(p.as_path())
+    };
+    i.state.insert(in_filepath.clone());
+    let (in_contents, total_n) = get_contents(in_filepath.as_path()).unwrap();
     let mut input = new_beaninput(&in_contents, i.state);
     parse_file(&mut input)?;
     i.state.finished_include(total_n);
