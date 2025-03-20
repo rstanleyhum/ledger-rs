@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-chrono = "0.4.40"
+arrow = "54.2.1"
+arrow_convert = { version = "0.8.1", features = ["rust_decimal"] }
+chrono = "0.4"
+parquet = "54.2.1"
 rust_decimal = "1.36.0"
 winnow = "0.7.4"
