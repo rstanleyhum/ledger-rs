@@ -43,4 +43,8 @@ fn readall(f: PathBuf) {
         .informationals
         .iter()
         .for_each(|x| println!("{:?}", x));
+
+    let array = state.try_transactions().unwrap();
+    println!("{:?}", array);
+    state.write_parquets();
 }

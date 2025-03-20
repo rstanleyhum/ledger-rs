@@ -288,8 +288,10 @@ fn transaction_header<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     )
         .with_span()
         .parse_next(i)?;
+    let statement_no = i.state.statement_no(r.start as u32);
+    i.state.transaction_no = statement_no;
     let h = HeaderParams {
-        statement_no: i.state.statement_no(r.start as u32),
+        statement_no,
         file_no: i.state.get_file_no().unwrap(),
         start: r.start as u32,
         end: r.end as u32,
@@ -302,7 +304,7 @@ fn transaction_header<'s>(i: &mut BeanInput<'s>) -> Result<()> {
 }
 
 fn posting<'s>(i: &mut BeanInput<'s>) -> Result<()> {
-    let ((_, account, (cp_q, cp_c), (tc_q, tc_c), _, _), r) = (
+    let ((_, account, (cp_quantity, cp_commodity), (tc_quantity, tc_commodity), _, _), r) = (
         literal("  "),
         full_account,
         opt_commodity_position,
@@ -315,18 +317,19 @@ fn posting<'s>(i: &mut BeanInput<'s>) -> Result<()> {
 
     let mut p = PostingParams {
         statement_no: i.state.statement_no(r.start as u32),
+        transaction_no: i.state.transaction_no,
         file_no: i.state.get_file_no().unwrap(),
         start: r.start as u32,
         end: r.end as u32,
         account,
-        cp_q,
-        cp_c: cp_c.clone(),
-        tc_q: cp_q,
-        tc_c: cp_c,
+        cp_quantity,
+        cp_commodity: cp_commodity.clone(),
+        tc_quantity: cp_quantity,
+        tc_commodity: cp_commodity,
     };
-    if !(tc_q.is_none() & tc_c.is_none()) {
-        p.tc_q = tc_q;
-        p.tc_c = tc_c;
+    if !(tc_quantity.is_none() & tc_commodity.is_none()) {
+        p.tc_quantity = tc_quantity;
+        p.tc_commodity = tc_commodity;
     }
     i.state.postings.push(p);
     Ok(())

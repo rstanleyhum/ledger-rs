@@ -5,11 +5,18 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use arrow::array::{ArrayRef, RecordBatch};
+use arrow_convert::ArrowField;
+use arrow_convert::ArrowSerialize;
+use arrow_convert::{ArrowDeserialize, serialize::TryIntoArrow};
+
 use chrono::NaiveDate;
+
+use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
 use rust_decimal::Decimal;
 use winnow::{LocatingSlice, Stateful, Str};
 
-#[derive(PartialEq, Debug)]
+#[derive(Debug, Clone, PartialEq, ArrowField, ArrowSerialize, ArrowDeserialize)]
 pub struct IncludeParams {
     pub statement_no: u32,
     pub file_no: u32,
@@ -22,7 +29,8 @@ pub const OPEN_ACTION: u32 = 0;
 pub const BALANCE_ACTION: u32 = 1;
 pub const CLOSE_ACTION: u32 = 2;
 
-#[derive(PartialEq, Debug)]
+#[derive(Debug, Clone, PartialEq, ArrowField, ArrowSerialize, ArrowDeserialize)]
+
 pub struct VerificationParams {
     pub statement_no: u32,
     pub file_no: u32,
@@ -35,7 +43,8 @@ pub struct VerificationParams {
     pub commodity: Option<String>,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Debug, Clone, PartialEq, ArrowField, ArrowSerialize, ArrowDeserialize)]
+
 pub struct HeaderParams {
     pub statement_no: u32,
     pub file_no: u32,
@@ -46,24 +55,26 @@ pub struct HeaderParams {
     pub tags: Option<Vec<String>>,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Debug, Clone, PartialEq, ArrowField, ArrowSerialize, ArrowDeserialize)]
+
 pub struct PostingParams {
     pub statement_no: u32,
+    pub transaction_no: u32,
     pub file_no: u32,
     pub start: u32,
     pub end: u32,
     pub account: String,
-    pub cp_q: Option<Decimal>,
-    pub cp_c: Option<String>,
-    pub tc_q: Option<Decimal>,
-    pub tc_c: Option<String>,
+    pub cp_quantity: Option<Decimal>,
+    pub cp_commodity: Option<String>,
+    pub tc_quantity: Option<Decimal>,
+    pub tc_commodity: Option<String>,
 }
 
 pub const EVENT_ACTION: u32 = 3;
 pub const OPTION_ACTION: u32 = 4;
 pub const CUSTOM_ACTION: u32 = 5;
 
-#[derive(PartialEq, Debug)]
+#[derive(Debug, Clone, PartialEq, ArrowField, ArrowSerialize, ArrowDeserialize)]
 pub struct InfoParams {
     pub statement_no: u32,
     pub file_no: u32,
@@ -91,6 +102,7 @@ pub struct LedgerParserState {
     current_filepath: Vec<PathBuf>,
     previous_position: HashMap<u32, u32>,
     statement_no: u32,
+    pub transaction_no: u32,
     pub transactions: Vec<HeaderParams>,
     pub postings: Vec<PostingParams>,
     pub verifications: Vec<VerificationParams>,
@@ -106,6 +118,7 @@ impl LedgerParserState {
             current_filepath: vec![],
             previous_position: HashMap::new(),
             statement_no: 0,
+            transaction_no: 0,
             transactions: vec![],
             postings: vec![],
             verifications: vec![],
@@ -162,6 +175,70 @@ impl LedgerParserState {
         self.previous_position
             .insert(*&self.get_file_no().unwrap(), n);
         self.current_file_no.pop();
+    }
+
+    pub fn try_transactions(&self) -> arrow::error::Result<ArrayRef> {
+        self.transactions.try_into_arrow()
+    }
+
+    pub fn try_postings(&self) -> arrow::error::Result<ArrayRef> {
+        self.postings.try_into_arrow()
+    }
+
+    pub fn try_verifications(&self) -> arrow::error::Result<ArrayRef> {
+        self.verifications.try_into_arrow()
+    }
+
+    pub fn try_informationals(&self) -> arrow::error::Result<ArrayRef> {
+        self.informationals.try_into_arrow()
+    }
+
+    pub fn try_includes(&self) -> arrow::error::Result<ArrayRef> {
+        self.includes.try_into_arrow()
+    }
+
+    pub fn write_parquets(&self) {
+        let array = self.try_postings().unwrap();
+        let struct_array = array
+            .as_any()
+            .downcast_ref::<arrow::array::StructArray>()
+            .unwrap();
+        let batch: RecordBatch = struct_array.try_into().unwrap();
+
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open("./postings.parquet")
+            .unwrap();
+        let props = WriterProperties::builder()
+            .set_compression(Compression::SNAPPY)
+            .build();
+
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props)).unwrap();
+
+        writer.write(&batch).expect("Writing batch");
+        writer.close().unwrap();
+
+        let array = self.try_transactions().unwrap();
+        let struct_array = array
+            .as_any()
+            .downcast_ref::<arrow::array::StructArray>()
+            .unwrap();
+        let batch: RecordBatch = struct_array.try_into().unwrap();
+
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open("./transactions.parquet")
+            .unwrap();
+        let props = WriterProperties::builder()
+            .set_compression(Compression::SNAPPY)
+            .build();
+
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props)).unwrap();
+
+        writer.write(&batch).expect("Writing batch");
+        writer.close().unwrap();
     }
 }
 
