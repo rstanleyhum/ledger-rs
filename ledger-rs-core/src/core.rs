@@ -11,6 +11,7 @@ use arrow_convert::ArrowSerialize;
 use arrow_convert::{ArrowDeserialize, serialize::TryIntoArrow};
 
 use chrono::NaiveDate;
+use polars::prelude::pivot::*;
 use polars::prelude::*;
 
 use df_interchange::Interchange;
@@ -244,6 +245,8 @@ impl LedgerParserState {
             .select([
                 col("statement_no"),
                 col("transaction_no"),
+                col("file_no"),
+                col("start"),
                 col("account"),
                 coalesce(&[col("cp_commodity"), col("tc_commodity")]).alias("cp_commodity_final"),
                 coalesce(&[col("cp_quantity"), col("totals")]).alias("cp_quantity_final"),
@@ -254,19 +257,76 @@ impl LedgerParserState {
             .collect()
             .unwrap();
 
-        let errors_df = final_df
+        let _errors_df = final_df
             .clone()
             .lazy()
             .group_by(["transaction_no", "tc_commodity_final"])
             .agg([(col("tc_quantity_final").sum())
                 .cast(DataType::Decimal(Some(38), Some(10)))
                 .alias("totals")])
-            .filter(col("totals").neq(0))
+            .filter(col("totals").neq(0).or(col("tc_commodity_final").is_null()))
             .collect()
             .unwrap();
 
-        println!("{}", final_df);
-        println!("{}", errors_df);
+        let _accounts_df = final_df
+            .clone()
+            .lazy()
+            .select([col("account").value_counts(false, false, "count", false)])
+            .unnest(["account"])
+            .collect()
+            .unwrap();
+
+        let account_sums_df = final_df
+            .clone()
+            .lazy()
+            .group_by([col("account"), col("tc_commodity_final")])
+            .agg([
+                len().alias("count"),
+                col("tc_quantity_final")
+                    .sum()
+                    .cast(DataType::Decimal(Some(38), Some(10)))
+                    .alias("total"),
+            ])
+            .sort(["account"], Default::default())
+            .collect()
+            .unwrap();
+
+        let mut pivot_df = pivot_stable(
+            &account_sums_df,
+            ["tc_commodity_final"],
+            Some(["account"]),
+            Some(["total"]),
+            true,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let mut file = std::fs::File::create("./output.json").unwrap();
+
+        // json
+        JsonWriter::new(&mut file)
+            .with_json_format(JsonFormat::Json)
+            .finish(&mut pivot_df)
+            .unwrap();
+
+        // // ndjson
+        // JsonWriter::new(&mut file)
+        //     .with_json_format(JsonFormat::JsonLines)
+        //     .finish(&mut df)
+        //     .unwrap();
+
+        let _check_df = final_df
+            .clone()
+            .lazy()
+            .filter(col("tc_commodity_final").is_null())
+            .select([all()])
+            .collect()
+            .unwrap();
+
+        //println!("{}", final_df);
+        //println!("{}", errors_df);
+        println!("{}", pivot_df);
     }
 
     pub fn write_parquets(&self) {
