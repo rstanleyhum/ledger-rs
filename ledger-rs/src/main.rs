@@ -36,15 +36,18 @@ fn readall(f: PathBuf) {
     let mut beaninput = new_beaninput(&input, &mut state);
     parse_file(&mut beaninput).unwrap();
 
-    state.transactions.iter().for_each(|x| println!("{:?}", x));
-    state.postings.iter().for_each(|x| println!("{:?}", x));
-    state.includes.iter().for_each(|x| println!("{:?}", x));
-    state
-        .informationals
-        .iter()
-        .for_each(|x| println!("{:?}", x));
+    // state.transactions.iter().for_each(|x| println!("{:?}", x));
+    // state.postings.iter().for_each(|x| println!("{:?}", x));
+    // state.includes.iter().for_each(|x| println!("{:?}", x));
+    // state
+    //     .informationals
+    //     .iter()
+    //     .for_each(|x| println!("{:?}", x));
 
-    let array = state.try_transactions().unwrap();
-    println!("{:?}", array);
-    state.write_parquets();
+    //let array = state.try_transactions().unwrap();
+    //println!("{:?}", array);
+
+    state.verify();
+
+    //state.write_parquets();
 }

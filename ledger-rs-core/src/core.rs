@@ -5,13 +5,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use arrow::array::{ArrayRef, RecordBatch};
+use arrow::array::{Array, ArrayRef, RecordBatch};
 use arrow_convert::ArrowField;
 use arrow_convert::ArrowSerialize;
 use arrow_convert::{ArrowDeserialize, serialize::TryIntoArrow};
 
 use chrono::NaiveDate;
+use polars::prelude::*;
 
+use df_interchange::Interchange;
 use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
 use rust_decimal::Decimal;
 use winnow::{LocatingSlice, Stateful, Str};
@@ -195,6 +197,76 @@ impl LedgerParserState {
 
     pub fn try_includes(&self) -> arrow::error::Result<ArrayRef> {
         self.includes.try_into_arrow()
+    }
+
+    pub fn verify(&self) {
+        let array = self.try_postings().unwrap();
+        let struct_array = array
+            .as_any()
+            .downcast_ref::<arrow::array::StructArray>()
+            .unwrap();
+        let batch: RecordBatch = struct_array.try_into().unwrap();
+
+        let df_interchange = Interchange::from_arrow_54(vec![batch]).unwrap();
+        let df_polars = df_interchange.to_polars_0_46().unwrap();
+
+        let final_df = df_polars
+            .clone()
+            .lazy()
+            .filter(col("tc_commodity").is_not_null())
+            .group_by(["transaction_no", "tc_commodity"])
+            .agg([(col("tc_quantity").sum() * lit(-1.0))
+                .cast(DataType::Decimal(Some(38), Some(10)))
+                .alias("totals")])
+            .filter(col("totals").neq(0))
+            .select([
+                col("transaction_no"),
+                col("tc_commodity"),
+                col("totals"),
+                col("tc_commodity")
+                    .rank(
+                        RankOptions {
+                            method: RankMethod::Dense,
+                            descending: false,
+                        },
+                        None,
+                    )
+                    .over(["transaction_no"])
+                    .alias("mynum"),
+            ])
+            .filter(col("mynum").eq(1))
+            .join(
+                df_polars.clone().lazy(),
+                [col("transaction_no")],
+                [col("transaction_no")],
+                JoinArgs::new(JoinType::Right),
+            )
+            .select([
+                col("statement_no"),
+                col("transaction_no"),
+                col("account"),
+                coalesce(&[col("cp_commodity"), col("tc_commodity")]).alias("cp_commodity_final"),
+                coalesce(&[col("cp_quantity"), col("totals")]).alias("cp_quantity_final"),
+                coalesce(&[col("tc_commodity_right"), col("tc_commodity")])
+                    .alias("tc_commodity_final"),
+                coalesce(&[col("tc_quantity"), col("totals")]).alias("tc_quantity_final"),
+            ])
+            .collect()
+            .unwrap();
+
+        let errors_df = final_df
+            .clone()
+            .lazy()
+            .group_by(["transaction_no", "tc_commodity_final"])
+            .agg([(col("tc_quantity_final").sum())
+                .cast(DataType::Decimal(Some(38), Some(10)))
+                .alias("totals")])
+            .filter(col("totals").neq(0))
+            .collect()
+            .unwrap();
+
+        println!("{}", final_df);
+        println!("{}", errors_df);
     }
 
     pub fn write_parquets(&self) {
