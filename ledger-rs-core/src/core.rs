@@ -257,7 +257,7 @@ impl LedgerParserState {
             .collect()
             .unwrap();
 
-        let _errors_df = final_df
+        let errors_df = final_df
             .clone()
             .lazy()
             .group_by(["transaction_no", "tc_commodity_final"])
@@ -268,11 +268,57 @@ impl LedgerParserState {
             .collect()
             .unwrap();
 
-        let _accounts_df = final_df
+        let account_list_df = final_df
             .clone()
             .lazy()
-            .select([col("account").value_counts(false, false, "count", false)])
-            .unnest(["account"])
+            .select([col("account").unique_stable().str().split(lit(":"))])
+            .collect()
+            .unwrap();
+
+        let mut accounts_series = account_list_df["account"].clone();
+        let mut done = false;
+        let mut n = 1;
+
+        while !done {
+            let a = account_list_df
+                .clone()
+                .lazy()
+                .select([col("account"), col("account").list().len().alias("length")])
+                .filter(col("length").gt(n))
+                .select([col("account").list().slice(lit(0), col("length") - lit(n))])
+                .collect()
+                .unwrap();
+
+            let t = a
+                .clone()
+                .lazy()
+                .select([len().alias("count")])
+                .collect()
+                .unwrap()
+                .column("count")
+                .unwrap()
+                .u32()
+                .unwrap()
+                .get(0)
+                .unwrap();
+
+            if t == 0 {
+                done = true;
+            }
+
+            n = n + 1;
+
+            accounts_series.append_owned(a["account"].clone()).unwrap();
+        }
+
+        let a_df = DataFrame::new(vec![accounts_series]).unwrap();
+
+        let a_unique_df = a_df
+            .clone()
+            .lazy()
+            .select([col("account").list().join(lit(":"), true)])
+            .select([col("account").unique_stable()])
+            .sort(["account"], Default::default())
             .collect()
             .unwrap();
 
@@ -285,30 +331,41 @@ impl LedgerParserState {
                 col("tc_quantity_final")
                     .sum()
                     .cast(DataType::Decimal(Some(38), Some(10)))
-                    .alias("total"),
+                    .alias("totals"),
             ])
-            .sort(["account"], Default::default())
             .collect()
             .unwrap();
 
-        let mut pivot_df = pivot_stable(
+        let pivot_df = pivot_stable(
             &account_sums_df,
             ["tc_commodity_final"],
             Some(["account"]),
-            Some(["total"]),
+            Some(["totals"]),
             true,
             None,
             None,
         )
         .unwrap();
 
-        let mut file = std::fs::File::create("./output.json").unwrap();
-
-        // json
-        JsonWriter::new(&mut file)
-            .with_json_format(JsonFormat::Json)
-            .finish(&mut pivot_df)
+        let final_pivot_df = a_unique_df
+            .clone()
+            .lazy()
+            .join(
+                pivot_df.clone().lazy(),
+                [col("account")],
+                [col("account")],
+                JoinArgs::new(JoinType::Left),
+            )
+            .collect()
             .unwrap();
+
+        // let mut file = std::fs::File::create("./output.json").unwrap();
+
+        // // json
+        // JsonWriter::new(&mut file)
+        //     .with_json_format(JsonFormat::Json)
+        //     .finish(&mut pivot_df)
+        //     .unwrap();
 
         // // ndjson
         // JsonWriter::new(&mut file)
@@ -324,9 +381,9 @@ impl LedgerParserState {
             .collect()
             .unwrap();
 
-        //println!("{}", final_df);
-        //println!("{}", errors_df);
-        println!("{}", pivot_df);
+        println!("{:?}", final_df);
+        println!("{:?}", errors_df);
+        println!("{:?}", final_pivot_df);
     }
 
     pub fn write_parquets(&self) {
