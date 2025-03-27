@@ -11,7 +11,6 @@ use arrow_convert::ArrowSerialize;
 use arrow_convert::{ArrowDeserialize, serialize::TryIntoArrow};
 
 use chrono::NaiveDate;
-use polars::prelude::pivot::*;
 use polars::prelude::*;
 
 use df_interchange::Interchange;
@@ -111,6 +110,8 @@ pub struct LedgerParserState {
     pub verifications: Vec<VerificationParams>,
     pub includes: Vec<IncludeParams>,
     pub informationals: Vec<InfoParams>,
+    pub final_df: DataFrame,
+    pub errors_df: DataFrame,
 }
 
 impl LedgerParserState {
@@ -127,6 +128,8 @@ impl LedgerParserState {
             verifications: vec![],
             includes: vec![],
             informationals: vec![],
+            final_df: DataFrame::empty(),
+            errors_df: DataFrame::empty(),
         }
     }
 
@@ -200,7 +203,7 @@ impl LedgerParserState {
         self.includes.try_into_arrow()
     }
 
-    pub fn verify(&self) {
+    pub fn verify(&mut self) {
         let array = self.try_postings().unwrap();
         let struct_array = array
             .as_any()
@@ -268,10 +271,32 @@ impl LedgerParserState {
             .collect()
             .unwrap();
 
-        let account_list_df = final_df
+        self.final_df = final_df;
+        self.errors_df = errors_df;
+    }
+
+    pub fn accounts(&self, c_col: &str, q_col: &str, filename: &str) {
+        let commodities_df = self
+            .final_df
             .clone()
             .lazy()
-            .select([col("account").unique_stable().str().split(lit(":"))])
+            .select([col(c_col).unique()])
+            .collect()
+            .unwrap();
+
+        let commodities: Vec<String> = commodities_df[c_col]
+            .str()
+            .unwrap()
+            .iter()
+            .filter(|x| x.is_some())
+            .map(|x| x.unwrap().to_string())
+            .collect::<Vec<_>>();
+
+        let account_list_df = self
+            .final_df
+            .clone()
+            .lazy()
+            .select([col("account").unique().str().split(lit(":"))])
             .collect()
             .unwrap();
 
@@ -313,77 +338,76 @@ impl LedgerParserState {
 
         let a_df = DataFrame::new(vec![accounts_series]).unwrap();
 
-        let a_unique_df = a_df
+        let accounts_df = a_df
             .clone()
             .lazy()
-            .select([col("account").list().join(lit(":"), true)])
-            .select([col("account").unique_stable()])
-            .sort(["account"], Default::default())
-            .collect()
-            .unwrap();
-
-        let account_sums_df = final_df
-            .clone()
-            .lazy()
-            .group_by([col("account"), col("tc_commodity_final")])
-            .agg([
-                len().alias("count"),
-                col("tc_quantity_final")
-                    .sum()
-                    .cast(DataType::Decimal(Some(38), Some(10)))
-                    .alias("totals"),
-            ])
-            .collect()
-            .unwrap();
-
-        let pivot_df = pivot_stable(
-            &account_sums_df,
-            ["tc_commodity_final"],
-            Some(["account"]),
-            Some(["totals"]),
-            true,
-            None,
-            None,
-        )
-        .unwrap();
-
-        let final_pivot_df = a_unique_df
-            .clone()
-            .lazy()
-            .join(
-                pivot_df.clone().lazy(),
-                [col("account")],
-                [col("account")],
-                JoinArgs::new(JoinType::Left),
+            .unique(None, UniqueKeepStrategy::Any)
+            .select([col("account").list().join(lit(":"), true).alias("account")])
+            .sort(
+                ["account"],
+                SortMultipleOptions::new().with_order_descending(true),
             )
             .collect()
             .unwrap();
 
-        // let mut file = std::fs::File::create("./output.json").unwrap();
+        let accounts: Vec<String> = accounts_df["account"]
+            .str()
+            .unwrap()
+            .iter()
+            .filter(|x| x.is_some())
+            .map(|x| x.unwrap().to_string())
+            .collect::<Vec<_>>();
 
-        // // json
-        // JsonWriter::new(&mut file)
-        //     .with_json_format(JsonFormat::Json)
-        //     .finish(&mut pivot_df)
-        //     .unwrap();
+        let mut all_totals: HashMap<String, Vec<String>> = HashMap::new();
 
-        // // ndjson
-        // JsonWriter::new(&mut file)
-        //     .with_json_format(JsonFormat::JsonLines)
-        //     .finish(&mut df)
-        //     .unwrap();
+        for c in commodities.clone() {
+            let mut totals: Vec<String> = vec![];
 
-        let _check_df = final_df
-            .clone()
-            .lazy()
-            .filter(col("tc_commodity_final").is_null())
-            .select([all()])
-            .collect()
-            .unwrap();
+            for a in accounts.clone() {
+                let total = self
+                    .final_df
+                    .clone()
+                    .lazy()
+                    .filter(
+                        col("account")
+                            .str()
+                            .starts_with(lit(a.clone()))
+                            .and(col(c_col).eq(lit(c.clone()))),
+                    )
+                    .select([col(q_col)
+                        .sum()
+                        .cast(DataType::Decimal(Some(38), Some(10)))
+                        .alias("total")])
+                    .collect()
+                    .unwrap()[0]
+                    .decimal()
+                    .unwrap()
+                    .get(0)
+                    .map(|x| rust_decimal::Decimal::try_from_i128_with_scale(x, 10).unwrap())
+                    .map(|x| x.to_string())
+                    .unwrap();
 
-        println!("{:?}", final_df);
-        println!("{:?}", errors_df);
-        println!("{:?}", final_pivot_df);
+                totals.push(total);
+            }
+
+            all_totals.insert(c, totals);
+        }
+        let mut cols: Vec<Column> = vec![];
+
+        cols.push(Column::new("accounts".into(), accounts.clone()));
+
+        for c in commodities.clone() {
+            cols.push(
+                Column::new(c.clone().into(), all_totals.get(&c).unwrap())
+                    .cast(&DataType::Decimal(Some(38), Some(10)))
+                    .unwrap(),
+            );
+        }
+
+        let mut df = DataFrame::new(cols).unwrap();
+
+        let mut file = std::fs::File::create(filename).unwrap();
+        CsvWriter::new(&mut file).finish(&mut df).unwrap();
     }
 
     pub fn write_parquets(&self) {

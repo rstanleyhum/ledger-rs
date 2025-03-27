@@ -36,4 +36,14 @@ fn readall(f: PathBuf) {
     let mut beaninput = new_beaninput(&input, &mut state);
     parse_file(&mut beaninput).unwrap();
     state.verify();
+    state.accounts(
+        "tc_commodity_final",
+        "tc_quantity_final",
+        "./tc_balances.csv",
+    );
+    state.accounts(
+        "cp_commodity_final",
+        "cp_quantity_final",
+        "./cp_balances.csv",
+    );
 }
