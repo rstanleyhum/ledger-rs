@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use ledger_rs_core::{
-    core::{LedgerParserState, get_contents, new_beaninput},
-    parse::parse_file,
+    parse::{new_beaninput, parse_file},
+    state::{LedgerParserState, get_contents},
 };
 
 #[derive(Parser)]

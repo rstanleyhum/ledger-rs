@@ -3,8 +3,11 @@ use std::str;
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
+use winnow::LocatingSlice;
 use winnow::Parser;
 use winnow::Result;
+use winnow::Stateful;
+use winnow::Str;
 use winnow::ascii::alphanumeric1;
 use winnow::ascii::digit1;
 use winnow::ascii::line_ending;
@@ -31,9 +34,19 @@ use crate::core::InfoParams;
 use crate::core::OPEN_ACTION;
 use crate::core::OPTION_ACTION;
 use crate::core::VerificationParams;
-use crate::core::get_contents;
-use crate::core::new_beaninput;
-use crate::core::{BeanInput, HeaderParams, IncludeParams, PostingParams};
+use crate::state::LedgerParserState;
+use crate::state::get_contents;
+
+use crate::core::{HeaderParams, IncludeParams, PostingParams};
+
+pub type BeanInput<'b> = Stateful<LocatingSlice<Str<'b>>, &'b mut LedgerParserState>;
+
+pub fn new_beaninput<'s>(s: &'s str, state: &'s mut LedgerParserState) -> BeanInput<'s> {
+    Stateful {
+        input: LocatingSlice::new(s),
+        state: state,
+    }
+}
 
 fn date_string<'s>(i: &mut BeanInput<'s>) -> Result<NaiveDate> {
     seq!(_: take_while(4, |c: char| c.is_dec_digit()),
