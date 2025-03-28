@@ -6,8 +6,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use arrow::array::ArrayRef;
-use arrow_convert::serialize::TryIntoArrow;
 use polars::frame::DataFrame;
 
 use crate::core::{HeaderParams, IncludeParams, InfoParams, PostingParams, VerificationParams};
@@ -25,7 +23,7 @@ pub struct LedgerParserState {
     pub verifications: Vec<VerificationParams>,
     pub includes: Vec<IncludeParams>,
     pub informationals: Vec<InfoParams>,
-    pub final_df: DataFrame,
+    pub postings_df: DataFrame,
     pub errors_df: DataFrame,
 }
 
@@ -43,7 +41,7 @@ impl LedgerParserState {
             verifications: vec![],
             includes: vec![],
             informationals: vec![],
-            final_df: DataFrame::empty(),
+            postings_df: DataFrame::empty(),
             errors_df: DataFrame::empty(),
         }
     }
@@ -96,26 +94,6 @@ impl LedgerParserState {
         self.previous_position
             .insert(*&self.get_file_no().unwrap(), n);
         self.current_file_no.pop();
-    }
-
-    pub fn try_transactions(&self) -> arrow::error::Result<ArrayRef> {
-        self.transactions.try_into_arrow()
-    }
-
-    pub fn try_postings(&self) -> arrow::error::Result<ArrayRef> {
-        self.postings.try_into_arrow()
-    }
-
-    pub fn try_verifications(&self) -> arrow::error::Result<ArrayRef> {
-        self.verifications.try_into_arrow()
-    }
-
-    pub fn try_informationals(&self) -> arrow::error::Result<ArrayRef> {
-        self.informationals.try_into_arrow()
-    }
-
-    pub fn try_includes(&self) -> arrow::error::Result<ArrayRef> {
-        self.includes.try_into_arrow()
     }
 }
 

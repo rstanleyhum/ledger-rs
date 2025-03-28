@@ -1,14 +1,14 @@
-use std::{collections::HashMap, fs::OpenOptions};
+use std::collections::HashMap;
 
 use crate::state::LedgerParserState;
 use arrow::array::{Array, RecordBatch};
+use arrow_convert::serialize::TryIntoArrow;
 use df_interchange::Interchange;
-use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
 use polars::prelude::*;
 
 impl LedgerParserState {
     pub fn verify(&mut self) {
-        let array = self.try_postings().unwrap();
+        let array: Arc<dyn Array> = self.postings.try_into_arrow().unwrap();
         let struct_array = array
             .as_any()
             .downcast_ref::<arrow::array::StructArray>()
@@ -75,13 +75,13 @@ impl LedgerParserState {
             .collect()
             .unwrap();
 
-        self.final_df = final_df;
+        self.postings_df = final_df;
         self.errors_df = errors_df;
     }
 
     pub fn accounts(&self, c_col: &str, q_col: &str, filename: &str) {
         let commodities_df = self
-            .final_df
+            .postings_df
             .clone()
             .lazy()
             .select([col(c_col).unique()])
@@ -97,7 +97,7 @@ impl LedgerParserState {
             .collect::<Vec<_>>();
 
         let account_list_df = self
-            .final_df
+            .postings_df
             .clone()
             .lazy()
             .select([col("account").unique().str().split(lit(":"))])
@@ -169,7 +169,7 @@ impl LedgerParserState {
 
             for a in accounts.clone() {
                 let total = self
-                    .final_df
+                    .postings_df
                     .clone()
                     .lazy()
                     .filter(
@@ -212,49 +212,5 @@ impl LedgerParserState {
 
         let mut file = std::fs::File::create(filename).unwrap();
         CsvWriter::new(&mut file).finish(&mut df).unwrap();
-    }
-
-    pub fn write_parquets(&self) {
-        let array = self.try_postings().unwrap();
-        let struct_array = array
-            .as_any()
-            .downcast_ref::<arrow::array::StructArray>()
-            .unwrap();
-        let batch: RecordBatch = struct_array.try_into().unwrap();
-
-        let file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open("./postings.parquet")
-            .unwrap();
-        let props = WriterProperties::builder()
-            .set_compression(Compression::SNAPPY)
-            .build();
-
-        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props)).unwrap();
-
-        writer.write(&batch).expect("Writing batch");
-        writer.close().unwrap();
-
-        let array = self.try_transactions().unwrap();
-        let struct_array = array
-            .as_any()
-            .downcast_ref::<arrow::array::StructArray>()
-            .unwrap();
-        let batch: RecordBatch = struct_array.try_into().unwrap();
-
-        let file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open("./transactions.parquet")
-            .unwrap();
-        let props = WriterProperties::builder()
-            .set_compression(Compression::SNAPPY)
-            .build();
-
-        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props)).unwrap();
-
-        writer.write(&batch).expect("Writing batch");
-        writer.close().unwrap();
     }
 }
