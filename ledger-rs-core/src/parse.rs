@@ -1,4 +1,8 @@
+use std::fs::OpenOptions;
+use std::io::Error;
+use std::io::Read;
 use std::path::Path;
+use std::path::PathBuf;
 use std::str;
 
 use chrono::NaiveDate;
@@ -35,18 +39,34 @@ use crate::core::OPEN_ACTION;
 use crate::core::OPTION_ACTION;
 use crate::core::VerificationParams;
 use crate::state::LedgerParserState;
-use crate::state::get_contents;
 
 use crate::core::{HeaderParams, IncludeParams, PostingParams};
 
 pub type BeanInput<'b> = Stateful<LocatingSlice<Str<'b>>, &'b mut LedgerParserState>;
 
-pub fn new_beaninput<'s>(s: &'s str, state: &'s mut LedgerParserState) -> BeanInput<'s> {
+pub fn parse_filename(f: PathBuf, state: &mut LedgerParserState) {
+    let (input, _) = get_contents(f.as_path()).unwrap();
+    let mut beaninput = new_beaninput(&input, state);
+    parse_file(&mut beaninput).unwrap();
+}
+
+fn new_beaninput<'s>(s: &'s str, state: &'s mut LedgerParserState) -> BeanInput<'s> {
     Stateful {
         input: LocatingSlice::new(s),
         state: state,
     }
 }
+
+fn get_contents(f: &Path) -> Result<(String, u32), Error> {
+    let mut s = String::new();
+    let mut infile = OpenOptions::new().read(true).open(f).unwrap();
+    let n = infile.read_to_string(&mut s).unwrap();
+    Ok((s, n as u32))
+}
+
+//
+// Winnow Parsing
+//
 
 fn date_string<'s>(i: &mut BeanInput<'s>) -> Result<NaiveDate> {
     seq!(_: take_while(4, |c: char| c.is_dec_digit()),
@@ -472,7 +492,7 @@ fn full_file<'s>(i: &mut BeanInput<'s>) -> Result<Vec<()>> {
     Ok(active_statements)
 }
 
-pub fn parse_file<'s>(i: &mut BeanInput<'s>) -> Result<()> {
+fn parse_file<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     full_file.parse_next(i)?;
     Ok(())
 }

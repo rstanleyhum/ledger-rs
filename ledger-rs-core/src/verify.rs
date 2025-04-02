@@ -1,10 +1,32 @@
-use std::collections::HashMap;
-
 use crate::state::LedgerParserState;
 use arrow::array::{Array, RecordBatch};
 use arrow_convert::serialize::TryIntoArrow;
 use df_interchange::Interchange;
 use polars::prelude::*;
+
+const ACCOUNT: &str = "account";
+const CP_COMMODITY: &str = "cp_commodity";
+const CP_QUANTITY: &str = "cp_quantity";
+const FILE_NO: &str = "file_no";
+const FINAL_CP_COMMODITY: &str = "cp_commodity_final";
+const FINAL_CP_QUANTITY: &str = "cp_quantity_final";
+const FINAL_TC_COMMODITY: &str = "tc_commodity_final";
+const FINAL_TC_QUANTITY: &str = "tc_quantity_final";
+const LENGTH: &str = "length";
+const START: &str = "start";
+const STATEMENT_NO: &str = "statement_no";
+const TC_COMMODITY: &str = "tc_commodity";
+const TC_COMMODITY_RIGHT: &str = "tc_commodity_right";
+const TC_QUANTITY: &str = "tc_quantity";
+const TOTALS: &str = "totals";
+const TRANSACTION_NO: &str = "transaction_no";
+const ACCOUNT_SEP: &str = ":";
+const PRECISION: usize = 38;
+const SCALE: usize = 2;
+const NODE: &str = "node";
+const LEVEL: &str = "level";
+const STOP_LEVEL: &str = "stop_level";
+const STOP_NODE: &str = "stop_node";
 
 impl LedgerParserState {
     pub fn verify(&mut self) {
@@ -16,71 +38,64 @@ impl LedgerParserState {
         let batch: RecordBatch = struct_array.try_into().unwrap();
 
         let df_interchange = Interchange::from_arrow_54(vec![batch]).unwrap();
-        let df_polars = df_interchange.to_polars_0_46().unwrap();
+        let df_postings: DataFrame = df_interchange.to_polars_0_46().unwrap();
 
-        let final_df = df_polars
+        let df_balancing = df_postings
             .clone()
             .lazy()
-            .filter(col("tc_commodity").is_not_null())
-            .group_by(["transaction_no", "tc_commodity"])
-            .agg([(col("tc_quantity").sum() * lit(-1.0))
-                .cast(DataType::Decimal(Some(38), Some(10)))
-                .alias("totals")])
-            .filter(col("totals").neq(0))
-            .select([
-                col("transaction_no"),
-                col("tc_commodity"),
-                col("totals"),
-                col("tc_commodity")
-                    .rank(
-                        RankOptions {
-                            method: RankMethod::Dense,
-                            descending: false,
-                        },
-                        None,
-                    )
-                    .over(["transaction_no"])
-                    .alias("mynum"),
-            ])
-            .filter(col("mynum").eq(1))
+            .filter(col(TC_COMMODITY).is_not_null())
+            .group_by([col(TRANSACTION_NO), col(TC_COMMODITY)])
+            .agg([(col(TC_QUANTITY).sum() * lit(-1.0))
+                .cast(DataType::Decimal(Some(PRECISION), Some(SCALE)))
+                .alias(TOTALS)])
+            .filter(col(TOTALS).neq(0))
+            .group_by([col(TRANSACTION_NO), col(TC_COMMODITY)])
+            .agg([col(TOTALS).first()]);
+
+        let final_postings_df = df_postings
+            .clone()
+            .lazy()
             .join(
-                df_polars.clone().lazy(),
-                [col("transaction_no")],
-                [col("transaction_no")],
+                df_balancing,
+                [col(TRANSACTION_NO)],
+                [col(TRANSACTION_NO)],
                 JoinArgs::new(JoinType::Right),
             )
             .select([
-                col("statement_no"),
-                col("transaction_no"),
-                col("file_no"),
-                col("start"),
-                col("account"),
-                coalesce(&[col("cp_commodity"), col("tc_commodity")]).alias("cp_commodity_final"),
-                coalesce(&[col("cp_quantity"), col("totals")]).alias("cp_quantity_final"),
-                coalesce(&[col("tc_commodity_right"), col("tc_commodity")])
-                    .alias("tc_commodity_final"),
-                coalesce(&[col("tc_quantity"), col("totals")]).alias("tc_quantity_final"),
+                col(STATEMENT_NO),
+                col(TRANSACTION_NO),
+                col(FILE_NO),
+                col(START),
+                col(ACCOUNT),
+                coalesce(&[col(CP_COMMODITY), col(TC_COMMODITY_RIGHT)]).alias(FINAL_CP_COMMODITY),
+                coalesce(&[col(CP_QUANTITY), col(TOTALS)])
+                    .cast(DataType::Decimal(Some(PRECISION), Some(SCALE)))
+                    .alias(FINAL_CP_QUANTITY),
+                coalesce(&[col(TC_COMMODITY), col(TC_COMMODITY_RIGHT)]).alias(FINAL_TC_COMMODITY),
+                coalesce(&[col(TC_QUANTITY), col(TOTALS)])
+                    .cast(DataType::Decimal(Some(PRECISION), Some(SCALE)))
+                    .alias(FINAL_TC_QUANTITY),
             ])
             .collect()
             .unwrap();
 
-        let errors_df = final_df
+        let errors_df = final_postings_df
             .clone()
             .lazy()
-            .group_by(["transaction_no", "tc_commodity_final"])
-            .agg([(col("tc_quantity_final").sum())
-                .cast(DataType::Decimal(Some(38), Some(10)))
-                .alias("totals")])
-            .filter(col("totals").neq(0).or(col("tc_commodity_final").is_null()))
+            .group_by([TRANSACTION_NO, FINAL_TC_COMMODITY])
+            .agg([(col(FINAL_TC_QUANTITY).sum())
+                .cast(DataType::Decimal(Some(PRECISION), Some(SCALE)))
+                .alias(TOTALS)])
+            .filter(col(TOTALS).neq(0).or(col(FINAL_TC_COMMODITY).is_null()))
             .collect()
             .unwrap();
 
-        self.postings_df = final_df;
+        self.postings_df = final_postings_df;
         self.errors_df = errors_df;
     }
 
-    pub fn accounts(&self, c_col: &str, q_col: &str, filename: &str) {
-        let commodities_df = self
+    fn _commodities(&mut self, c_col: &str) -> Vec<String> {
+        self.commodities_df = self
             .postings_df
             .clone()
             .lazy()
@@ -88,23 +103,28 @@ impl LedgerParserState {
             .collect()
             .unwrap();
 
-        let commodities: Vec<String> = commodities_df[c_col]
+        self.commodities_df
+            .clone()
+            .column(c_col)
+            .unwrap()
             .str()
             .unwrap()
             .iter()
             .filter(|x| x.is_some())
             .map(|x| x.unwrap().to_string())
-            .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+    }
 
+    fn accounts(&mut self) -> Vec<String> {
         let account_list_df = self
             .postings_df
             .clone()
             .lazy()
-            .select([col("account").unique().str().split(lit(":"))])
+            .select([col(ACCOUNT).unique().str().split(lit(ACCOUNT_SEP))])
             .collect()
             .unwrap();
 
-        let mut accounts_series = account_list_df["account"].clone();
+        let mut accounts_series = account_list_df[ACCOUNT].clone();
         let mut done = false;
         let mut n = 1;
 
@@ -112,105 +132,121 @@ impl LedgerParserState {
             let a = account_list_df
                 .clone()
                 .lazy()
-                .select([col("account"), col("account").list().len().alias("length")])
-                .filter(col("length").gt(n))
-                .select([col("account").list().slice(lit(0), col("length") - lit(n))])
+                .select([col(ACCOUNT), col(ACCOUNT).list().len().alias(LENGTH)])
+                .filter(col(LENGTH).gt(n))
+                .select([col(ACCOUNT).list().slice(lit(0), col(LENGTH) - lit(n))])
                 .collect()
                 .unwrap();
 
-            let t = a
-                .clone()
-                .lazy()
-                .select([len().alias("count")])
-                .collect()
-                .unwrap()
-                .column("count")
-                .unwrap()
-                .u32()
-                .unwrap()
-                .get(0)
-                .unwrap();
+            let (rows, _) = a.shape();
 
-            if t == 0 {
+            if rows == 0 {
                 done = true;
             }
 
             n = n + 1;
 
-            accounts_series.append_owned(a["account"].clone()).unwrap();
+            accounts_series.append_owned(a[ACCOUNT].clone()).unwrap();
         }
 
         let a_df = DataFrame::new(vec![accounts_series]).unwrap();
 
-        let accounts_df = a_df
+        self.accounts_df = a_df
             .clone()
             .lazy()
             .unique(None, UniqueKeepStrategy::Any)
-            .select([col("account").list().join(lit(":"), true).alias("account")])
+            .select([col(ACCOUNT)
+                .list()
+                .join(lit(ACCOUNT_SEP), true)
+                .alias(ACCOUNT)])
             .sort(
-                ["account"],
+                [ACCOUNT],
                 SortMultipleOptions::new().with_order_descending(true),
             )
             .collect()
             .unwrap();
 
-        let accounts: Vec<String> = accounts_df["account"]
+        self.accounts_df.clone()[ACCOUNT]
             .str()
             .unwrap()
             .iter()
             .filter(|x| x.is_some())
             .map(|x| x.unwrap().to_string())
-            .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+    }
 
-        let mut all_totals: HashMap<String, Vec<String>> = HashMap::new();
+    pub fn account_tree(&mut self) {
+        let accounts = self.accounts();
+        let max_node = accounts.len() as u32 + 1;
 
-        for c in commodities.clone() {
-            let mut totals: Vec<String> = vec![];
-
-            for a in accounts.clone() {
-                let total = self
-                    .postings_df
-                    .clone()
-                    .lazy()
-                    .filter(
-                        col("account")
-                            .str()
-                            .starts_with(lit(a.clone()))
-                            .and(col(c_col).eq(lit(c.clone()))),
-                    )
-                    .select([col(q_col)
-                        .sum()
-                        .cast(DataType::Decimal(Some(38), Some(10)))
-                        .alias("total")])
-                    .collect()
-                    .unwrap()[0]
-                    .decimal()
-                    .unwrap()
-                    .get(0)
-                    .map(|x| rust_decimal::Decimal::try_from_i128_with_scale(x, 10).unwrap())
-                    .map(|x| x.to_string())
-                    .unwrap();
-
-                totals.push(total);
-            }
-
-            all_totals.insert(c, totals);
-        }
-        let mut cols: Vec<Column> = vec![];
-
-        cols.push(Column::new("accounts".into(), accounts.clone()));
-
-        for c in commodities.clone() {
-            cols.push(
-                Column::new(c.clone().into(), all_totals.get(&c).unwrap())
-                    .cast(&DataType::Decimal(Some(38), Some(10)))
-                    .unwrap(),
+        let original = self
+            .accounts_df
+            .clone()
+            .lazy()
+            .sort(
+                [ACCOUNT],
+                SortMultipleOptions::new().with_order_descending(false),
+            )
+            .with_row_index(NODE, Some(1))
+            .with_column(
+                (col(ACCOUNT).str().count_matches(lit(ACCOUNT_SEP), true) + lit(1)).alias(LEVEL),
+            )
+            .with_column(
+                int_ranges(max(LEVEL), col(LEVEL) - lit(1), lit(-1))
+                    .cast(DataType::List(Box::new(DataType::UInt32)))
+                    .alias(STOP_LEVEL),
             );
-        }
 
-        let mut df = DataFrame::new(cols).unwrap();
+        let stop_levels = original
+            .clone()
+            .explode([col(STOP_LEVEL)])
+            .group_by([col(STOP_LEVEL)])
+            .agg([col(NODE).alias(STOP_NODE)])
+            .with_column(
+                concat_list([
+                    col(STOP_NODE),
+                    lit(max_node)
+                        .repeat_by(1)
+                        .cast(DataType::List(Box::new(DataType::UInt32))),
+                ])
+                .unwrap()
+                .alias(STOP_NODE),
+            )
+            .collect()
+            .unwrap();
 
-        let mut file = std::fs::File::create(filename).unwrap();
-        CsvWriter::new(&mut file).finish(&mut df).unwrap();
+        let start_stop = original
+            .clone()
+            .join(
+                stop_levels.clone().lazy(),
+                [col(LEVEL)],
+                [col(STOP_LEVEL)],
+                JoinArgs::new(JoinType::Left),
+            )
+            .select([col(NODE), col(STOP_NODE)])
+            .explode([col(STOP_NODE)])
+            .filter(col(NODE).lt(col(STOP_NODE)))
+            .group_by([col(NODE)])
+            .agg([col(STOP_NODE).min()]);
+
+        let account_tree = original
+            .clone()
+            .join(
+                start_stop,
+                [col(NODE)],
+                [col(NODE)],
+                JoinArgs::new(JoinType::Left),
+            )
+            .select([
+                col(NODE),
+                col(ACCOUNT),
+                col(STOP_NODE).fill_null(col(NODE).max() + lit(1)),
+                col(LEVEL),
+            ])
+            .sort([LEVEL, NODE], Default::default())
+            .collect()
+            .unwrap();
+
+        self.account_tree = account_tree;
     }
 }

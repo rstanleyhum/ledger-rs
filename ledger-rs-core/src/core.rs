@@ -16,6 +16,9 @@ pub struct IncludeParams {
 pub const OPEN_ACTION: u32 = 0;
 pub const BALANCE_ACTION: u32 = 1;
 pub const CLOSE_ACTION: u32 = 2;
+pub const EVENT_ACTION: u32 = 3;
+pub const OPTION_ACTION: u32 = 4;
+pub const CUSTOM_ACTION: u32 = 5;
 
 #[derive(Debug, Clone, PartialEq, ArrowField, ArrowSerialize, ArrowDeserialize)]
 
@@ -57,10 +60,6 @@ pub struct PostingParams {
     pub tc_quantity: Option<Decimal>,
     pub tc_commodity: Option<String>,
 }
-
-pub const EVENT_ACTION: u32 = 3;
-pub const OPTION_ACTION: u32 = 4;
-pub const CUSTOM_ACTION: u32 = 5;
 
 #[derive(Debug, Clone, PartialEq, ArrowField, ArrowSerialize, ArrowDeserialize)]
 pub struct InfoParams {

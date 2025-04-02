@@ -1,10 +1,4 @@
-use std::{
-    collections::HashMap,
-    fs::OpenOptions,
-    io::Error,
-    io::Read,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, path::PathBuf};
 
 use polars::frame::DataFrame;
 
@@ -25,6 +19,9 @@ pub struct LedgerParserState {
     pub informationals: Vec<InfoParams>,
     pub postings_df: DataFrame,
     pub errors_df: DataFrame,
+    pub accounts_df: DataFrame,
+    pub commodities_df: DataFrame,
+    pub account_tree: DataFrame,
 }
 
 impl LedgerParserState {
@@ -43,6 +40,9 @@ impl LedgerParserState {
             informationals: vec![],
             postings_df: DataFrame::empty(),
             errors_df: DataFrame::empty(),
+            accounts_df: DataFrame::empty(),
+            commodities_df: DataFrame::empty(),
+            account_tree: DataFrame::empty(),
         }
     }
 
@@ -95,11 +95,4 @@ impl LedgerParserState {
             .insert(*&self.get_file_no().unwrap(), n);
         self.current_file_no.pop();
     }
-}
-
-pub fn get_contents(f: &Path) -> Result<(String, u32), Error> {
-    let mut s = String::new();
-    let mut infile = OpenOptions::new().read(true).open(f).unwrap();
-    let n = infile.read_to_string(&mut s).unwrap();
-    Ok((s, n as u32))
 }

@@ -9,7 +9,7 @@ arrow_convert = { version = "0.8.1", features = ["rust_decimal"] }
 chrono = "0.4"
 df-interchange = { version = "0.1.2", features = ["arrow_54", "polars_0_46"] }
 parquet = "54.2.1"
-polars = { version = "0.46.0", features = ["dtype-full", "json", "lazy", "pivot", "rank", "strings"] }
+polars = { version = "0.46.0", features = ["dtype-full", "dtype-struct", "json", "lazy", "list_arithmetic", "pivot", "polars-ops", "range", "rank", "repeat_by", "strings"] }
 polars-arrow = "0.46.0"
 rust_decimal = "1.36.0"
 winnow = "0.7.4"
