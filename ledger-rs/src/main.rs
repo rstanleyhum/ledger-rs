@@ -30,6 +30,7 @@ fn readall(f: PathBuf) {
     state.insert(f.clone());
     parse_filename(f, &mut state);
     state.verify();
-    let df = state.balances();
-    println!("balances\n{}", df);
+
+    println!("tc_balances\n{}", state.tc_balances());
+    println!("cp_balances\n{}", state.cp_balances());
 }

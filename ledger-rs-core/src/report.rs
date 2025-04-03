@@ -8,91 +8,54 @@ use crate::{
     },
 };
 
-pub const TC_TOTAL: &str = "tc_total";
-pub const CP_TOTAL: &str = "cp_total";
+pub const TOTAL: &str = "total";
 pub const ACCOUNT_RIGHT: &str = "account_right";
 pub const MATCH: &str = "match";
 
 impl LedgerParserState {
-    pub fn balances(&mut self) -> DataFrame {
-        let tc_totals_df = self
+    pub fn tc_balances(&mut self) -> DataFrame {
+        self.balances(FINAL_TC_COMMODITY, FINAL_TC_QUANTITY)
+    }
+
+    pub fn cp_balances(&mut self) -> DataFrame {
+        self.balances(FINAL_CP_COMMODITY, FINAL_CP_QUANTITY)
+    }
+
+    fn balances(&mut self, commodity_col: &str, quantity_col: &str) -> DataFrame {
+        let totals_df = self
             .postings_df
             .clone()
             .lazy()
-            .group_by([col(ACCOUNT), col(FINAL_TC_COMMODITY)])
-            .agg([col(FINAL_TC_QUANTITY).sum().alias(TC_TOTAL)]);
+            .group_by([col(ACCOUNT), col(commodity_col)])
+            .agg([col(quantity_col).sum().alias(TOTAL)]);
 
-        let cp_totals_df = self
-            .postings_df
-            .clone()
-            .lazy()
-            .group_by([col(ACCOUNT), col(FINAL_CP_COMMODITY)])
-            .agg([col(FINAL_CP_QUANTITY).sum().alias(CP_TOTAL)]);
-
-        let tc_map = self
+        let map_df = self
             .accounts_df
             .clone()
             .lazy()
-            .cross_join(self.commodities(FINAL_TC_COMMODITY).clone().lazy(), None)
+            .cross_join(self.commodities(commodity_col).clone().lazy(), None)
             .cross_join(self.accounts_df.clone().lazy(), None)
             .with_column(
                 col(ACCOUNT_RIGHT)
                     .str()
                     .starts_with(col(ACCOUNT))
                     .alias(MATCH),
-            )
-            .collect()
-            .unwrap();
+            );
 
-        let tc_totals_df = tc_map
-            .clone()
-            .lazy()
+        let balances_df = map_df
             .join(
-                tc_totals_df.clone().lazy(),
-                [col(ACCOUNT_RIGHT), col(FINAL_TC_COMMODITY)],
-                [col(ACCOUNT), col(FINAL_TC_COMMODITY)],
+                totals_df,
+                [col(ACCOUNT_RIGHT), col(commodity_col)],
+                [col(ACCOUNT), col(commodity_col)],
                 JoinArgs::new(JoinType::Inner),
             )
             .filter(col(MATCH).eq(true))
-            .group_by([col(ACCOUNT), col(FINAL_TC_COMMODITY)])
-            .agg([col(TC_TOTAL).sum()])
-            .sort([ACCOUNT], Default::default())
+            .group_by([col(ACCOUNT), col(commodity_col)])
+            .agg([col(TOTAL).sum()])
+            .sort([ACCOUNT, commodity_col], Default::default())
             .collect()
             .unwrap();
 
-        println!("tc_totals_df\n{}", tc_totals_df);
-
-        let cp_map = self
-            .accounts_df
-            .clone()
-            .lazy()
-            .cross_join(self.commodities(FINAL_CP_COMMODITY).clone().lazy(), None)
-            .cross_join(self.accounts_df.clone().lazy(), None)
-            .with_column(
-                col(ACCOUNT_RIGHT)
-                    .str()
-                    .starts_with(col(ACCOUNT))
-                    .alias(MATCH),
-            )
-            .collect()
-            .unwrap();
-
-        let cp_totals_df = cp_map
-            .clone()
-            .lazy()
-            .join(
-                cp_totals_df.clone().lazy(),
-                [col(ACCOUNT_RIGHT), col(FINAL_CP_COMMODITY)],
-                [col(ACCOUNT), col(FINAL_CP_COMMODITY)],
-                JoinArgs::new(JoinType::Inner),
-            )
-            .filter(col(MATCH).eq(true))
-            .group_by([col(ACCOUNT), col(FINAL_CP_COMMODITY)])
-            .agg([col(CP_TOTAL).sum()])
-            .sort([ACCOUNT], Default::default())
-            .collect()
-            .unwrap();
-
-        cp_totals_df
+        balances_df
     }
 }
