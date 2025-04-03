@@ -2,6 +2,7 @@ use crate::state::LedgerParserState;
 use arrow::array::{Array, RecordBatch};
 use arrow_convert::serialize::TryIntoArrow;
 use df_interchange::Interchange;
+use polars::error::PolarsResult;
 use polars::prelude::*;
 
 pub const ACCOUNT: &str = "account";
@@ -26,7 +27,7 @@ const PRECISION: usize = 38;
 const SCALE: usize = 2;
 
 impl LedgerParserState {
-    pub fn verify(&mut self) {
+    pub fn verify(&mut self) -> PolarsResult<()> {
         let array: Arc<dyn Array> = self.postings.try_into_arrow().unwrap();
         let struct_array = array
             .as_any()
@@ -73,8 +74,7 @@ impl LedgerParserState {
                     .cast(DataType::Decimal(Some(PRECISION), Some(SCALE)))
                     .alias(FINAL_TC_QUANTITY),
             ])
-            .collect()
-            .unwrap();
+            .collect()?;
 
         let errors_df = final_postings_df
             .clone()
@@ -84,72 +84,62 @@ impl LedgerParserState {
                 .cast(DataType::Decimal(Some(PRECISION), Some(SCALE)))
                 .alias(TOTALS)])
             .filter(col(TOTALS).neq(0).or(col(FINAL_TC_COMMODITY).is_null()))
-            .collect()
-            .unwrap();
+            .collect()?;
 
         self.postings_df = final_postings_df;
         self.errors_df = errors_df;
-        self.accounts();
+        self.accounts_df = self.get_accounts_df()?;
+        Ok(())
     }
 
-    pub fn commodities(&mut self, c_col: &str) -> DataFrame {
+    pub fn get_commodities_df(&mut self, c_col: &str) -> PolarsResult<DataFrame> {
         self.postings_df
             .clone()
             .lazy()
             .select([col(c_col).unique()])
             .collect()
-            .unwrap()
     }
 
-    fn accounts(&mut self) {
+    fn get_accounts_df(&mut self) -> PolarsResult<DataFrame> {
         let account_list_df = self
             .postings_df
             .clone()
             .lazy()
             .select([col(ACCOUNT).unique().str().split(lit(ACCOUNT_SEP))])
-            .collect()
-            .unwrap();
+            .with_column(col(ACCOUNT).list().len().alias(LENGTH));
 
-        let mut accounts_series = account_list_df[ACCOUNT].clone();
-        let mut done = false;
-        let mut n = 1;
+        let max_n = account_list_df
+            .clone()
+            .select([col(LENGTH).max()])
+            .collect()?
+            .column(LENGTH)?
+            .u32()?
+            .get(0);
 
-        while !done {
-            let a = account_list_df
-                .clone()
-                .lazy()
-                .select([col(ACCOUNT), col(ACCOUNT).list().len().alias(LENGTH)])
-                .filter(col(LENGTH).gt(n))
-                .select([col(ACCOUNT).list().slice(lit(0), col(LENGTH) - lit(n))])
-                .collect()
-                .unwrap();
+        if let Some(max_n) = max_n {
+            let mut df = account_list_df.clone().collect()?;
 
-            let (rows, _) = a.shape();
+            for n in 1..max_n {
+                let a = account_list_df
+                    .clone()
+                    .filter(col(LENGTH).gt(n))
+                    .with_column(col(ACCOUNT).list().slice(lit(0), col(LENGTH) - lit(n)))
+                    .collect()?;
 
-            if rows == 0 {
-                done = true;
+                df.vstack_mut(&a)?;
             }
 
-            n = n + 1;
+            df.align_chunks_par();
 
-            accounts_series.append_owned(a[ACCOUNT].clone()).unwrap();
+            df.clone()
+                .lazy()
+                .select([col(ACCOUNT)])
+                .unique(None, UniqueKeepStrategy::Any)
+                .with_column(col(ACCOUNT).list().join(lit(ACCOUNT_SEP), true))
+                .sort([ACCOUNT], Default::default())
+                .collect()
+        } else {
+            Err(PolarsError::NoData("No Accounts Found".into()))
         }
-
-        let a_df = DataFrame::new(vec![accounts_series]).unwrap();
-
-        self.accounts_df = a_df
-            .clone()
-            .lazy()
-            .unique(None, UniqueKeepStrategy::Any)
-            .select([col(ACCOUNT)
-                .list()
-                .join(lit(ACCOUNT_SEP), true)
-                .alias(ACCOUNT)])
-            .sort(
-                [ACCOUNT],
-                SortMultipleOptions::new().with_order_descending(true),
-            )
-            .collect()
-            .unwrap();
     }
 }

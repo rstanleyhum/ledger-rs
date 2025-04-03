@@ -29,8 +29,8 @@ fn readall(f: PathBuf) {
 
     state.insert(f.clone());
     parse_filename(f, &mut state);
-    state.verify();
+    state.verify().unwrap();
 
-    println!("tc_balances\n{}", state.tc_balances());
-    println!("cp_balances\n{}", state.cp_balances());
+    println!("tc_balances\n{}", state.tc_balances().unwrap());
+    println!("cp_balances\n{}", state.cp_balances().unwrap());
 }

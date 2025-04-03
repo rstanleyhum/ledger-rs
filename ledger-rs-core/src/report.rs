@@ -1,3 +1,4 @@
+use polars::error::PolarsResult;
 use polars::frame::DataFrame;
 use polars::prelude::*;
 
@@ -13,15 +14,19 @@ const ACCOUNT_RIGHT: &str = "account_right";
 const MATCH: &str = "match";
 
 impl LedgerParserState {
-    pub fn tc_balances(&mut self) -> DataFrame {
-        self.balances(FINAL_TC_COMMODITY, FINAL_TC_QUANTITY)
+    pub fn tc_balances(&mut self) -> PolarsResult<DataFrame> {
+        self.get_balances_df(FINAL_TC_COMMODITY, FINAL_TC_QUANTITY)
     }
 
-    pub fn cp_balances(&mut self) -> DataFrame {
-        self.balances(FINAL_CP_COMMODITY, FINAL_CP_QUANTITY)
+    pub fn cp_balances(&mut self) -> PolarsResult<DataFrame> {
+        self.get_balances_df(FINAL_CP_COMMODITY, FINAL_CP_QUANTITY)
     }
 
-    fn balances(&mut self, commodity_col: &str, quantity_col: &str) -> DataFrame {
+    fn get_balances_df(
+        &mut self,
+        commodity_col: &str,
+        quantity_col: &str,
+    ) -> PolarsResult<DataFrame> {
         let totals_df = self
             .postings_df
             .clone()
@@ -33,7 +38,7 @@ impl LedgerParserState {
             .accounts_df
             .clone()
             .lazy()
-            .cross_join(self.commodities(commodity_col).clone().lazy(), None)
+            .cross_join(self.get_commodities_df(commodity_col)?.clone().lazy(), None)
             .cross_join(self.accounts_df.clone().lazy(), None)
             .with_column(
                 col(ACCOUNT_RIGHT)
@@ -42,7 +47,7 @@ impl LedgerParserState {
                     .alias(MATCH),
             );
 
-        let balances_df = map_df
+        map_df
             .join(
                 totals_df,
                 [col(ACCOUNT_RIGHT), col(commodity_col)],
@@ -54,8 +59,5 @@ impl LedgerParserState {
             .agg([col(TOTAL).sum()])
             .sort([ACCOUNT, commodity_col], Default::default())
             .collect()
-            .unwrap();
-
-        balances_df
     }
 }
