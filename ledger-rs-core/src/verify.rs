@@ -4,29 +4,29 @@ use arrow_convert::serialize::TryIntoArrow;
 use df_interchange::Interchange;
 use polars::prelude::*;
 
-const ACCOUNT: &str = "account";
-const CP_COMMODITY: &str = "cp_commodity";
-const CP_QUANTITY: &str = "cp_quantity";
-const FILE_NO: &str = "file_no";
-const FINAL_CP_COMMODITY: &str = "cp_commodity_final";
-const FINAL_CP_QUANTITY: &str = "cp_quantity_final";
-const FINAL_TC_COMMODITY: &str = "tc_commodity_final";
-const FINAL_TC_QUANTITY: &str = "tc_quantity_final";
-const LENGTH: &str = "length";
-const START: &str = "start";
-const STATEMENT_NO: &str = "statement_no";
-const TC_COMMODITY: &str = "tc_commodity";
-const TC_COMMODITY_RIGHT: &str = "tc_commodity_right";
-const TC_QUANTITY: &str = "tc_quantity";
-const TOTALS: &str = "totals";
-const TRANSACTION_NO: &str = "transaction_no";
-const ACCOUNT_SEP: &str = ":";
-const PRECISION: usize = 38;
-const SCALE: usize = 2;
-const NODE: &str = "node";
-const LEVEL: &str = "level";
-const STOP_LEVEL: &str = "stop_level";
-const STOP_NODE: &str = "stop_node";
+pub const ACCOUNT: &str = "account";
+pub const CP_COMMODITY: &str = "cp_commodity";
+pub const CP_QUANTITY: &str = "cp_quantity";
+pub const FILE_NO: &str = "file_no";
+pub const FINAL_CP_COMMODITY: &str = "cp_commodity_final";
+pub const FINAL_CP_QUANTITY: &str = "cp_quantity_final";
+pub const FINAL_TC_COMMODITY: &str = "tc_commodity_final";
+pub const FINAL_TC_QUANTITY: &str = "tc_quantity_final";
+pub const LENGTH: &str = "length";
+pub const START: &str = "start";
+pub const STATEMENT_NO: &str = "statement_no";
+pub const TC_COMMODITY: &str = "tc_commodity";
+pub const TC_COMMODITY_RIGHT: &str = "tc_commodity_right";
+pub const TC_QUANTITY: &str = "tc_quantity";
+pub const TOTALS: &str = "totals";
+pub const TRANSACTION_NO: &str = "transaction_no";
+pub const ACCOUNT_SEP: &str = ":";
+pub const PRECISION: usize = 38;
+pub const SCALE: usize = 2;
+pub const NODE: &str = "node";
+pub const LEVEL: &str = "level";
+pub const STOP_LEVEL: &str = "stop_level";
+pub const STOP_NODE: &str = "stop_node";
 
 impl LedgerParserState {
     pub fn verify(&mut self) {
@@ -56,10 +56,10 @@ impl LedgerParserState {
             .clone()
             .lazy()
             .join(
-                df_balancing,
+                df_balancing.clone(),
                 [col(TRANSACTION_NO)],
                 [col(TRANSACTION_NO)],
-                JoinArgs::new(JoinType::Right),
+                JoinArgs::new(JoinType::Left),
             )
             .select([
                 col(STATEMENT_NO),
@@ -92,30 +92,19 @@ impl LedgerParserState {
 
         self.postings_df = final_postings_df;
         self.errors_df = errors_df;
+        self.accounts();
     }
 
-    fn _commodities(&mut self, c_col: &str) -> Vec<String> {
-        self.commodities_df = self
-            .postings_df
+    pub fn commodities(&mut self, c_col: &str) -> DataFrame {
+        self.postings_df
             .clone()
             .lazy()
             .select([col(c_col).unique()])
             .collect()
-            .unwrap();
-
-        self.commodities_df
-            .clone()
-            .column(c_col)
             .unwrap()
-            .str()
-            .unwrap()
-            .iter()
-            .filter(|x| x.is_some())
-            .map(|x| x.unwrap().to_string())
-            .collect::<Vec<_>>()
     }
 
-    fn accounts(&mut self) -> Vec<String> {
+    fn accounts(&mut self) {
         let account_list_df = self
             .postings_df
             .clone()
@@ -165,88 +154,5 @@ impl LedgerParserState {
             )
             .collect()
             .unwrap();
-
-        self.accounts_df.clone()[ACCOUNT]
-            .str()
-            .unwrap()
-            .iter()
-            .filter(|x| x.is_some())
-            .map(|x| x.unwrap().to_string())
-            .collect::<Vec<_>>()
-    }
-
-    pub fn account_tree(&mut self) {
-        let accounts = self.accounts();
-        let max_node = accounts.len() as u32 + 1;
-
-        let original = self
-            .accounts_df
-            .clone()
-            .lazy()
-            .sort(
-                [ACCOUNT],
-                SortMultipleOptions::new().with_order_descending(false),
-            )
-            .with_row_index(NODE, Some(1))
-            .with_column(
-                (col(ACCOUNT).str().count_matches(lit(ACCOUNT_SEP), true) + lit(1)).alias(LEVEL),
-            )
-            .with_column(
-                int_ranges(max(LEVEL), col(LEVEL) - lit(1), lit(-1))
-                    .cast(DataType::List(Box::new(DataType::UInt32)))
-                    .alias(STOP_LEVEL),
-            );
-
-        let stop_levels = original
-            .clone()
-            .explode([col(STOP_LEVEL)])
-            .group_by([col(STOP_LEVEL)])
-            .agg([col(NODE).alias(STOP_NODE)])
-            .with_column(
-                concat_list([
-                    col(STOP_NODE),
-                    lit(max_node)
-                        .repeat_by(1)
-                        .cast(DataType::List(Box::new(DataType::UInt32))),
-                ])
-                .unwrap()
-                .alias(STOP_NODE),
-            )
-            .collect()
-            .unwrap();
-
-        let start_stop = original
-            .clone()
-            .join(
-                stop_levels.clone().lazy(),
-                [col(LEVEL)],
-                [col(STOP_LEVEL)],
-                JoinArgs::new(JoinType::Left),
-            )
-            .select([col(NODE), col(STOP_NODE)])
-            .explode([col(STOP_NODE)])
-            .filter(col(NODE).lt(col(STOP_NODE)))
-            .group_by([col(NODE)])
-            .agg([col(STOP_NODE).min()]);
-
-        let account_tree = original
-            .clone()
-            .join(
-                start_stop,
-                [col(NODE)],
-                [col(NODE)],
-                JoinArgs::new(JoinType::Left),
-            )
-            .select([
-                col(NODE),
-                col(ACCOUNT),
-                col(STOP_NODE).fill_null(col(NODE).max() + lit(1)),
-                col(LEVEL),
-            ])
-            .sort([LEVEL, NODE], Default::default())
-            .collect()
-            .unwrap();
-
-        self.account_tree = account_tree;
     }
 }

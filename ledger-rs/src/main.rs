@@ -30,6 +30,6 @@ fn readall(f: PathBuf) {
     state.insert(f.clone());
     parse_filename(f, &mut state);
     state.verify();
-    state.account_tree();
-    println!("{}", state.account_tree);
+    let df = state.balances();
+    println!("balances\n{}", df);
 }
