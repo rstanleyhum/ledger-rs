@@ -21,7 +21,6 @@ pub struct LedgerParserState {
     pub errors_df: DataFrame,
     pub accounts_df: DataFrame,
     pub commodities_df: DataFrame,
-    pub account_tree: DataFrame,
 }
 
 impl LedgerParserState {
@@ -42,7 +41,6 @@ impl LedgerParserState {
             errors_df: DataFrame::empty(),
             accounts_df: DataFrame::empty(),
             commodities_df: DataFrame::empty(),
-            account_tree: DataFrame::empty(),
         }
     }
 

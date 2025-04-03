@@ -8,9 +8,9 @@ use crate::{
     },
 };
 
-pub const TOTAL: &str = "total";
-pub const ACCOUNT_RIGHT: &str = "account_right";
-pub const MATCH: &str = "match";
+const TOTAL: &str = "total";
+const ACCOUNT_RIGHT: &str = "account_right";
+const MATCH: &str = "match";
 
 impl LedgerParserState {
     pub fn tc_balances(&mut self) -> DataFrame {

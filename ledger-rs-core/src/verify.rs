@@ -5,28 +5,25 @@ use df_interchange::Interchange;
 use polars::prelude::*;
 
 pub const ACCOUNT: &str = "account";
-pub const CP_COMMODITY: &str = "cp_commodity";
-pub const CP_QUANTITY: &str = "cp_quantity";
-pub const FILE_NO: &str = "file_no";
 pub const FINAL_CP_COMMODITY: &str = "cp_commodity_final";
 pub const FINAL_CP_QUANTITY: &str = "cp_quantity_final";
 pub const FINAL_TC_COMMODITY: &str = "tc_commodity_final";
 pub const FINAL_TC_QUANTITY: &str = "tc_quantity_final";
-pub const LENGTH: &str = "length";
-pub const START: &str = "start";
-pub const STATEMENT_NO: &str = "statement_no";
-pub const TC_COMMODITY: &str = "tc_commodity";
-pub const TC_COMMODITY_RIGHT: &str = "tc_commodity_right";
-pub const TC_QUANTITY: &str = "tc_quantity";
-pub const TOTALS: &str = "totals";
-pub const TRANSACTION_NO: &str = "transaction_no";
-pub const ACCOUNT_SEP: &str = ":";
-pub const PRECISION: usize = 38;
-pub const SCALE: usize = 2;
-pub const NODE: &str = "node";
-pub const LEVEL: &str = "level";
-pub const STOP_LEVEL: &str = "stop_level";
-pub const STOP_NODE: &str = "stop_node";
+
+const CP_COMMODITY: &str = "cp_commodity";
+const CP_QUANTITY: &str = "cp_quantity";
+const FILE_NO: &str = "file_no";
+const LENGTH: &str = "length";
+const START: &str = "start";
+const STATEMENT_NO: &str = "statement_no";
+const TC_COMMODITY: &str = "tc_commodity";
+const TC_COMMODITY_RIGHT: &str = "tc_commodity_right";
+const TC_QUANTITY: &str = "tc_quantity";
+const TOTALS: &str = "totals";
+const TRANSACTION_NO: &str = "transaction_no";
+const ACCOUNT_SEP: &str = ":";
+const PRECISION: usize = 38;
+const SCALE: usize = 2;
 
 impl LedgerParserState {
     pub fn verify(&mut self) {
