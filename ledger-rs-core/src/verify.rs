@@ -1,4 +1,4 @@
-use crate::state::LedgerParserState;
+use crate::state::LedgerState;
 use arrow::array::{Array, RecordBatch};
 use arrow_convert::serialize::TryIntoArrow;
 use df_interchange::Interchange;
@@ -26,7 +26,7 @@ const ACCOUNT_SEP: &str = ":";
 const PRECISION: usize = 38;
 const SCALE: usize = 2;
 
-impl LedgerParserState {
+impl LedgerState {
     pub fn verify(&mut self) -> PolarsResult<()> {
         let array: Arc<dyn Array> = self.postings.try_into_arrow().unwrap();
         let struct_array = array

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use ledger_rs_core::{parse::parse_filename, state::LedgerParserState};
+use ledger_rs_core::{parse::parse_filename, state::LedgerState};
 
 #[derive(Parser)]
 #[command(version, about, long_about=None)]
@@ -25,7 +25,7 @@ fn main() {
 }
 
 fn readall(f: PathBuf) {
-    let mut state = LedgerParserState::new();
+    let mut state = LedgerState::new();
 
     state.insert(f.clone());
     parse_filename(f, &mut state);

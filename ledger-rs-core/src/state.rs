@@ -1,16 +1,17 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::atomic::AtomicU32};
 
 use polars::frame::DataFrame;
 
 use crate::core::{HeaderParams, IncludeParams, InfoParams, PostingParams, VerificationParams};
 
 #[derive(Debug)]
-pub struct LedgerParserState {
+pub struct LedgerState {
     pub input_files: HashMap<PathBuf, u32>,
     current_file_no: Vec<u32>,
     current_filepath: Vec<PathBuf>,
     previous_position: HashMap<u32, u32>,
     statement_no: u32,
+    pub line_count: AtomicU32,
     pub transaction_no: u32,
     pub transactions: Vec<HeaderParams>,
     pub postings: Vec<PostingParams>,
@@ -23,7 +24,7 @@ pub struct LedgerParserState {
     pub commodities_df: DataFrame,
 }
 
-impl LedgerParserState {
+impl LedgerState {
     pub fn new() -> Self {
         Self {
             input_files: HashMap::new(),
@@ -31,6 +32,7 @@ impl LedgerParserState {
             current_filepath: vec![],
             previous_position: HashMap::new(),
             statement_no: 0,
+            line_count: AtomicU32::new(0),
             transaction_no: 0,
             transactions: vec![],
             postings: vec![],

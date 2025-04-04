@@ -38,19 +38,19 @@ use crate::core::InfoParams;
 use crate::core::OPEN_ACTION;
 use crate::core::OPTION_ACTION;
 use crate::core::VerificationParams;
-use crate::state::LedgerParserState;
+use crate::state::LedgerState;
 
 use crate::core::{HeaderParams, IncludeParams, PostingParams};
 
-pub type BeanInput<'b> = Stateful<LocatingSlice<Str<'b>>, &'b mut LedgerParserState>;
+pub type BeanInput<'b> = Stateful<LocatingSlice<Str<'b>>, &'b mut LedgerState>;
 
-pub fn parse_filename(f: PathBuf, state: &mut LedgerParserState) {
+pub fn parse_filename(f: PathBuf, state: &mut LedgerState) {
     let (input, _) = get_contents(f.as_path()).unwrap();
     let mut beaninput = new_beaninput(&input, state);
     parse_file(&mut beaninput).unwrap();
 }
 
-fn new_beaninput<'s>(s: &'s str, state: &'s mut LedgerParserState) -> BeanInput<'s> {
+fn new_beaninput<'s>(s: &'s str, state: &'s mut LedgerState) -> BeanInput<'s> {
     Stateful {
         input: LocatingSlice::new(s),
         state: state,

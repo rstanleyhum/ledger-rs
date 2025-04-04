@@ -1,3 +1,4 @@
 [workspace]
-members = [ "ledger-rs", "ledger-rs-core" ]
+members = [ "ledger-rs", "ledger-rs-core", "ledger-rs-csv"]
 resolver = "3"
+
