@@ -95,4 +95,48 @@ impl LedgerState {
             .insert(*&self.get_file_no().unwrap(), n);
         self.current_file_no.pop();
     }
+
+    pub fn write_transactions(&self) {
+        for t in self.transactions.iter() {
+            println!("{} * \"{}\"", t.date, t.narration);
+            for p in self.postings.iter() {
+                if t.statement_no == p.transaction_no {
+                    if (p.cp_commodity == p.tc_commodity) & (p.cp_quantity == p.tc_quantity) {
+                        if p.cp_commodity.is_none() {
+                            println!("  {}", p.account);
+                        } else {
+                            let cp_q = match p.cp_quantity.clone() {
+                                Some(q) => q.to_string(),
+                                None => "ERROR".to_string(),
+                            };
+                            let cp_c = match p.cp_commodity.clone() {
+                                Some(c) => c,
+                                None => "ERROR".to_string(),
+                            };
+                            println!("  {} {} {}", p.account, cp_q, cp_c);
+                        }
+                    } else {
+                        match (p.cp_commodity.clone(), p.tc_commodity.clone()) {
+                            (None, None) => println!("  {}", p.account),
+                            (Some(c), None) => {
+                                println!("  {} {} {}", p.account, p.cp_quantity.unwrap(), c)
+                            }
+                            (None, Some(c)) => {
+                                println!("  {} {} {}", p.account, p.tc_quantity.unwrap(), c)
+                            }
+                            (Some(c), Some(tc_c)) => println!(
+                                "  {} {} {} @@ {} {}",
+                                p.account,
+                                p.cp_quantity.unwrap(),
+                                c,
+                                p.tc_quantity.unwrap(),
+                                tc_c
+                            ),
+                        }
+                    }
+                }
+            }
+            println!("\n");
+        }
+    }
 }
