@@ -136,7 +136,7 @@ impl LedgerState {
                     }
                 }
             }
-            println!("\n");
+            println!("");
         }
     }
 }
