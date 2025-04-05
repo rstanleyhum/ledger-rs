@@ -111,7 +111,7 @@ fn quoted_string<'s>(i: &mut BeanInput<'s>) -> Result<&'s str> {
 }
 
 fn narration<'s>(i: &mut BeanInput<'s>) -> Result<String> {
-    quoted_string.take().map(|x| x.to_string()).parse_next(i)
+    quoted_string.map(|x| x.to_string()).parse_next(i)
 }
 
 fn comment<'s>(i: &mut BeanInput<'s>) -> Result<&'s str> {
