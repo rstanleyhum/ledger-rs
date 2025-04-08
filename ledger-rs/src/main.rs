@@ -206,4 +206,5 @@ fn read_qfx(f: PathBuf, e: Option<String>, symbols_f: PathBuf) {
     println!("balances: {}", state.verifications.len());
     println!("\n");
     state.write_transactions();
+    state.write_balances();
 }

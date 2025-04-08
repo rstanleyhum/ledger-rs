@@ -2,7 +2,9 @@ use std::{collections::HashMap, path::PathBuf, sync::atomic::AtomicU32};
 
 use polars::frame::DataFrame;
 
-use crate::core::{HeaderParams, IncludeParams, InfoParams, PostingParams, VerificationParams};
+use crate::core::{
+    BALANCE_ACTION, HeaderParams, IncludeParams, InfoParams, PostingParams, VerificationParams,
+};
 
 #[derive(Debug)]
 pub struct LedgerState {
@@ -94,6 +96,22 @@ impl LedgerState {
         self.previous_position
             .insert(*&self.get_file_no().unwrap(), n);
         self.current_file_no.pop();
+    }
+
+    pub fn write_balances(&self) {
+        self.verifications
+            .iter()
+            .filter(|x| x.action == BALANCE_ACTION)
+            .for_each(|x| {
+                println!(
+                    "{} balance {} {} {}",
+                    x.date,
+                    x.account,
+                    x.quantity.unwrap(),
+                    x.commodity.clone().unwrap(),
+                );
+                println!("");
+            })
     }
 
     pub fn write_transactions(&self) {
