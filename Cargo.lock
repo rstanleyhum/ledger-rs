@@ -1360,6 +1360,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "csv",
  "encoding_rs",
  "encoding_rs_io",
  "ledger-rs-core",

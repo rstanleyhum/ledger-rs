@@ -16,6 +16,8 @@ use ledger_rs_core::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
+use crate::symbols::load_accounts;
+
 #[derive(Debug)]
 pub struct InterTrans {
     pub date: NaiveDate,
@@ -397,8 +399,10 @@ pub fn process_qfx(filename: &PathBuf, encoding: Option<&'static Encoding>) -> R
 pub fn parse_qfx_file(
     filename: PathBuf,
     encoding: Option<String>,
+    symbols_f: PathBuf,
     state: &mut LedgerState,
 ) -> Result<()> {
+    let symbols = load_accounts(String::from(symbols_f.to_str().unwrap())).unwrap();
     let e = match encoding {
         Some(e_string) => {
             if e_string == "1252" {
@@ -415,6 +419,10 @@ pub fn parse_qfx_file(
 
     let mut count = 1;
     import_state.transactions.iter().for_each(|t| {
+        let acct = match symbols.get(&t.account) {
+            Some(n) => n.clone(),
+            None => t.account.clone(),
+        };
         state.transactions.push(HeaderParams {
             statement_no: count,
             file_no: 0u32,
@@ -430,7 +438,7 @@ pub fn parse_qfx_file(
             file_no: 0u32,
             start: 0u32,
             end: 0u32,
-            account: t.account.clone(),
+            account: acct,
             cp_quantity: Some(t.quantity),
             cp_commodity: Some(t.commodity.clone()),
             tc_quantity: Some(t.quantity),
@@ -439,6 +447,10 @@ pub fn parse_qfx_file(
         count = count + 1;
     });
     import_state.balances.iter().for_each(|t| {
+        let acct = match symbols.get(&t.account) {
+            Some(n) => n.clone(),
+            None => t.account.clone(),
+        };
         state.verifications.push(VerificationParams {
             statement_no: count,
             file_no: 0u32,
@@ -446,7 +458,7 @@ pub fn parse_qfx_file(
             end: 0u32,
             date: t.date,
             action: BALANCE_ACTION,
-            account: t.account.clone(),
+            account: acct,
             quantity: Some(t.quantity),
             commodity: Some(t.commodity.clone()),
         });

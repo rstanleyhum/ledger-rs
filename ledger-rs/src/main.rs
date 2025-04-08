@@ -53,6 +53,7 @@ enum Command {
         symbol_f: PathBuf,
     },
     Qfx {
+        symbols_f: PathBuf,
         filepath: PathBuf,
         encoding: Option<String>,
     },
@@ -105,7 +106,11 @@ fn main() {
             currency.as_str(),
         ),
         Command::RjSymbols { symbol_f } => rj_symbols(symbol_f),
-        Command::Qfx { filepath, encoding } => read_qfx(filepath, encoding),
+        Command::Qfx {
+            symbols_f,
+            filepath,
+            encoding,
+        } => read_qfx(filepath, encoding, symbols_f),
     }
 }
 
@@ -191,10 +196,10 @@ fn rj_symbols(f: PathBuf) {
     println!("{:?}", result);
 }
 
-fn read_qfx(f: PathBuf, e: Option<String>) {
+fn read_qfx(f: PathBuf, e: Option<String>, symbols_f: PathBuf) {
     let mut state = LedgerState::new();
 
-    let _ = parse_qfx_file(f, e, &mut state);
+    let _ = parse_qfx_file(f, e, symbols_f, &mut state);
 
     println!("transactions: {}", state.transactions.len());
     println!("postings: {}", state.postings.len());
