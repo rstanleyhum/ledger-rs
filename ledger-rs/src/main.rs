@@ -10,6 +10,7 @@ use ledger_rs_csv::{
     rj_symbols::load_symbols,
     rj_usa::process_us_transaction,
 };
+use ledger_rs_qfx::qfx::parse_qfx_file;
 
 #[derive(Parser)]
 #[command(version, about, long_about=None)]
@@ -50,6 +51,10 @@ enum Command {
     },
     RjSymbols {
         symbol_f: PathBuf,
+    },
+    Qfx {
+        filepath: PathBuf,
+        encoding: Option<String>,
     },
 }
 
@@ -100,6 +105,7 @@ fn main() {
             currency.as_str(),
         ),
         Command::RjSymbols { symbol_f } => rj_symbols(symbol_f),
+        Command::Qfx { filepath, encoding } => read_qfx(filepath, encoding),
     }
 }
 
@@ -183,4 +189,16 @@ fn rj_cdn_holdings(f: PathBuf, bkdate: NaiveDate, currency: &str) {
 fn rj_symbols(f: PathBuf) {
     let result = load_symbols(String::from(f.to_str().unwrap())).unwrap();
     println!("{:?}", result);
+}
+
+fn read_qfx(f: PathBuf, e: Option<String>) {
+    let mut state = LedgerState::new();
+
+    let _ = parse_qfx_file(f, e, &mut state);
+
+    println!("transactions: {}", state.transactions.len());
+    println!("postings: {}", state.postings.len());
+    println!("balances: {}", state.verifications.len());
+    println!("\n");
+    state.write_transactions();
 }
