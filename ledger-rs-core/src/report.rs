@@ -3,15 +3,12 @@ use polars::frame::DataFrame;
 use polars::prelude::*;
 
 use crate::{
-    state::LedgerState,
-    verify::{
-        ACCOUNT, FINAL_CP_COMMODITY, FINAL_CP_QUANTITY, FINAL_TC_COMMODITY, FINAL_TC_QUANTITY,
+    core::{
+        ACCOUNT, ACCOUNT_RIGHT, FINAL_CP_COMMODITY, FINAL_CP_QUANTITY, FINAL_TC_COMMODITY,
+        FINAL_TC_QUANTITY, MATCH, TOTAL,
     },
+    state::LedgerState,
 };
-
-const TOTAL: &str = "total";
-const ACCOUNT_RIGHT: &str = "account_right";
-const MATCH: &str = "match";
 
 impl LedgerState {
     pub fn tc_balances(&mut self) -> PolarsResult<DataFrame> {

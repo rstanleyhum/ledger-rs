@@ -127,11 +127,12 @@ fn tag<'s>(i: &mut BeanInput<'s>) -> Result<String> {
         .parse_next(i)
 }
 
-fn tag_list<'s>(i: &mut BeanInput<'s>) -> Result<Vec<String>> {
-    separated(1.., tag, " ").parse_next(i)
+fn tag_list<'s>(i: &mut BeanInput<'s>) -> Result<String> {
+    let r: Vec<String> = separated(1.., tag, " ").parse_next(i)?;
+    Ok(r.join(" "))
 }
 
-fn opt_tag_list<'s>(i: &mut BeanInput<'s>) -> Result<Vec<String>> {
+fn opt_tag_list<'s>(i: &mut BeanInput<'s>) -> Result<String> {
     let (_, r) = (space1, tag_list).parse_next(i)?;
     Ok(r)
 }

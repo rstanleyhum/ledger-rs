@@ -116,7 +116,10 @@ impl LedgerState {
 
     pub fn write_transactions(&self) {
         for t in self.transactions.iter() {
-            println!("{} * \"{}\"", t.date, t.narration);
+            match &t.tags {
+                Some(x) => println!("{} * \"{}\" {}", t.date, t.narration, x),
+                None => println!("{} * \"{}\"", t.date, t.narration),
+            }
             for p in self.postings.iter() {
                 if t.statement_no == p.transaction_no {
                     if (p.cp_commodity == p.tc_commodity) & (p.cp_quantity == p.tc_quantity) {

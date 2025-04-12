@@ -1,30 +1,14 @@
+use crate::core::{
+    ACCOUNT, ACCOUNT_SEP, CP_COMMODITY, CP_QUANTITY, FILE_NO, FINAL_CP_COMMODITY,
+    FINAL_CP_QUANTITY, FINAL_TC_COMMODITY, FINAL_TC_QUANTITY, LENGTH, PRECISION, SCALE, START,
+    STATEMENT_NO, TC_COMMODITY, TC_COMMODITY_RIGHT, TC_QUANTITY, TOTALS, TRANSACTION_NO,
+};
 use crate::state::LedgerState;
 use arrow::array::{Array, RecordBatch};
 use arrow_convert::serialize::TryIntoArrow;
 use df_interchange::Interchange;
 use polars::error::PolarsResult;
 use polars::prelude::*;
-
-pub const ACCOUNT: &str = "account";
-pub const FINAL_CP_COMMODITY: &str = "cp_commodity_final";
-pub const FINAL_CP_QUANTITY: &str = "cp_quantity_final";
-pub const FINAL_TC_COMMODITY: &str = "tc_commodity_final";
-pub const FINAL_TC_QUANTITY: &str = "tc_quantity_final";
-
-const CP_COMMODITY: &str = "cp_commodity";
-const CP_QUANTITY: &str = "cp_quantity";
-const FILE_NO: &str = "file_no";
-const LENGTH: &str = "length";
-const START: &str = "start";
-const STATEMENT_NO: &str = "statement_no";
-const TC_COMMODITY: &str = "tc_commodity";
-const TC_COMMODITY_RIGHT: &str = "tc_commodity_right";
-const TC_QUANTITY: &str = "tc_quantity";
-const TOTALS: &str = "totals";
-const TRANSACTION_NO: &str = "transaction_no";
-const ACCOUNT_SEP: &str = ":";
-const PRECISION: usize = 38;
-const SCALE: usize = 2;
 
 impl LedgerState {
     /**
