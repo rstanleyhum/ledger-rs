@@ -3,7 +3,8 @@ use std::{collections::HashMap, path::PathBuf, sync::atomic::AtomicU32};
 use polars::frame::DataFrame;
 
 use crate::core::{
-    BALANCE_ACTION, HeaderParams, IncludeParams, InfoParams, PostingParams, VerificationParams,
+    BALANCE_ACTION, BALANCE_SYMBOL, COST_SEP, HeaderParams, IncludeParams, InfoParams,
+    PostingParams, TRANSACTION_FLAG, VerificationParams,
 };
 
 #[derive(Debug)]
@@ -104,8 +105,9 @@ impl LedgerState {
             .filter(|x| x.action == BALANCE_ACTION)
             .for_each(|x| {
                 println!(
-                    "{} balance {} {} {}",
+                    "{} {} {} {} {}",
                     x.date,
+                    BALANCE_SYMBOL,
                     x.account,
                     x.quantity.unwrap(),
                     x.commodity.clone().unwrap(),
@@ -117,8 +119,8 @@ impl LedgerState {
     pub fn write_transactions(&self) {
         for t in self.transactions.iter() {
             match &t.tags {
-                Some(x) => println!("{} * \"{}\" {}", t.date, t.narration, x),
-                None => println!("{} * \"{}\"", t.date, t.narration),
+                Some(x) => println!("{} {} \"{}\" {}", t.date, TRANSACTION_FLAG, t.narration, x),
+                None => println!("{} {} \"{}\"", t.date, TRANSACTION_FLAG, t.narration),
             }
             for p in self.postings.iter() {
                 if t.statement_no == p.transaction_no {
@@ -146,10 +148,11 @@ impl LedgerState {
                                 println!("  {} {} {}", p.account, p.tc_quantity.unwrap(), c)
                             }
                             (Some(c), Some(tc_c)) => println!(
-                                "  {} {} {} @@ {} {}",
+                                "  {} {} {} {} {} {}",
                                 p.account,
                                 p.cp_quantity.unwrap(),
                                 c,
+                                COST_SEP,
                                 p.tc_quantity.unwrap(),
                                 tc_c
                             ),

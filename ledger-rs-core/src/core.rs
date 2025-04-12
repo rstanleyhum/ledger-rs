@@ -4,6 +4,21 @@ use chrono::NaiveDate;
 
 use rust_decimal::Decimal;
 
+pub const ASSETS_BASE: &str = "Assets";
+pub const LIABILITIES_BASE: &str = "Liabilities";
+pub const EQUITY_BASE: &str = "Equity";
+pub const INCOME_BASE: &str = "Income";
+pub const EXPENSES_BASE: &str = "Expenses";
+
+pub const OPEN_SYMBOL: &str = "open";
+pub const CLOSE_SYMBOL: &str = "close";
+pub const BALANCE_SYMBOL: &str = "balance";
+pub const EVENT_SYMBOL: &str = "event";
+pub const OPTION_SYMBOL: &str = "option";
+pub const INCLUDE_SYMBOL: &str = "include";
+pub const CUSTOM_SYMBOL: &str = "custom";
+
+pub const DATE_FORMAT: &str = "%Y-%m-%d";
 pub const ACCOUNT: &str = "account";
 pub const FINAL_CP_COMMODITY: &str = "cp_commodity_final";
 pub const FINAL_CP_QUANTITY: &str = "cp_quantity_final";

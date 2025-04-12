@@ -7,11 +7,7 @@ use std::str;
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
-use winnow::LocatingSlice;
-use winnow::Parser;
-use winnow::Result;
-use winnow::Stateful;
-use winnow::Str;
+
 use winnow::ascii::alphanumeric1;
 use winnow::ascii::digit1;
 use winnow::ascii::line_ending;
@@ -29,18 +25,16 @@ use winnow::combinator::seq;
 use winnow::stream::AsChar;
 use winnow::token::literal;
 use winnow::token::take_while;
+use winnow::{LocatingSlice, Parser, Result, Stateful, Str};
 
-use crate::core::BALANCE_ACTION;
-use crate::core::CLOSE_ACTION;
-use crate::core::CUSTOM_ACTION;
-use crate::core::EVENT_ACTION;
-use crate::core::InfoParams;
-use crate::core::OPEN_ACTION;
-use crate::core::OPTION_ACTION;
-use crate::core::VerificationParams;
+use crate::core::{
+    ACCOUNT_SEP, ASSETS_BASE, BALANCE_ACTION, BALANCE_SYMBOL, CLOSE_ACTION, CLOSE_SYMBOL, COST_SEP,
+    CUSTOM_ACTION, CUSTOM_SYMBOL, DATE_FORMAT, EQUITY_BASE, EVENT_ACTION, EVENT_SYMBOL,
+    EXPENSES_BASE, INCLUDE_SYMBOL, INCOME_BASE, LIABILITIES_BASE, OPEN_ACTION, OPEN_SYMBOL,
+    OPTION_ACTION, OPTION_SYMBOL, TRANSACTION_FLAG,
+};
+use crate::core::{HeaderParams, IncludeParams, InfoParams, PostingParams, VerificationParams};
 use crate::state::LedgerState;
-
-use crate::core::{HeaderParams, IncludeParams, PostingParams};
 
 pub type BeanInput<'b> = Stateful<LocatingSlice<Str<'b>>, &'b mut LedgerState>;
 
@@ -76,17 +70,17 @@ fn date_string<'s>(i: &mut BeanInput<'s>) -> Result<NaiveDate> {
      _: take_while(2, |c: char| c.is_dec_digit())
     )
     .take()
-    .try_map(|x| NaiveDate::parse_from_str(x, "%Y-%m-%d"))
+    .try_map(|x| NaiveDate::parse_from_str(x, DATE_FORMAT))
     .parse_next(i)
 }
 
 fn base_account_name<'s>(i: &mut BeanInput<'s>) -> Result<&'s str> {
     alt((
-        literal("Assets"),
-        literal("Liabilities"),
-        literal("Equity"),
-        literal("Income"),
-        literal("Expenses"),
+        literal(ASSETS_BASE),
+        literal(LIABILITIES_BASE),
+        literal(EQUITY_BASE),
+        literal(INCOME_BASE),
+        literal(EXPENSES_BASE),
     ))
     .parse_next(i)
 }
@@ -96,11 +90,11 @@ fn account_name<'s>(i: &mut BeanInput<'s>) -> Result<&'s str> {
 }
 
 fn subaccount<'s>(i: &mut BeanInput<'s>) -> Result<()> {
-    separated(1.., account_name, ":").parse_next(i)
+    separated(1.., account_name, ACCOUNT_SEP).parse_next(i)
 }
 
 fn full_account<'s>(i: &mut BeanInput<'s>) -> Result<String> {
-    separated_pair(base_account_name, ":", subaccount)
+    separated_pair(base_account_name, ACCOUNT_SEP, subaccount)
         .take()
         .map(|x| x.to_string())
         .parse_next(i)
@@ -171,7 +165,7 @@ fn opt_commodity_position<'s>(i: &mut BeanInput<'s>) -> Result<(Option<Decimal>,
 fn total_cost<'s>(i: &mut BeanInput<'s>) -> Result<(Decimal, String)> {
     let (_, _, _, q, _, c) = (
         space1,
-        literal("@@"),
+        literal(COST_SEP),
         space1,
         decimal_string,
         space1,
@@ -193,7 +187,7 @@ fn open_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     let ((date, _, _, _, account, _, _), r) = (
         date_string,
         space1,
-        literal("open"),
+        literal(OPEN_SYMBOL),
         space1,
         full_account,
         space0,
@@ -220,7 +214,7 @@ fn close_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     let ((date, _, _, _, account, _, _), r) = (
         date_string,
         space1,
-        literal("close"),
+        literal(CLOSE_SYMBOL),
         space1,
         full_account,
         space0,
@@ -247,7 +241,7 @@ fn balance_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     let ((date, _, _, _, account, _, position, _, commodity, _, _), r) = (
         date_string,
         space1,
-        literal("balance"),
+        literal(BALANCE_SYMBOL),
         space1,
         full_account,
         space1,
@@ -276,7 +270,7 @@ fn balance_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
 
 fn include_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     let ((_, _, path, _, _), r) = (
-        literal("include"),
+        literal(INCLUDE_SYMBOL),
         space1,
         quoted_string,
         space0,
@@ -313,7 +307,7 @@ fn transaction_header<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     let ((date, _, _, _, narration, tags, _, _), r) = (
         date_string,
         space1,
-        literal("*"),
+        literal(TRANSACTION_FLAG),
         space1,
         narration,
         opt(opt_tag_list),
@@ -383,7 +377,7 @@ fn event_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     let ((d, _, _, _, a, _, v, _, _), r) = (
         date_string,
         space1,
-        literal("event"),
+        literal(EVENT_SYMBOL),
         space1,
         quoted_string,
         space1,
@@ -409,7 +403,7 @@ fn event_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
 
 fn option_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
     let ((_, _, a, _, v, _, _), r) = (
-        literal("option"),
+        literal(OPTION_SYMBOL),
         space1,
         quoted_string,
         space1,
@@ -434,7 +428,12 @@ fn option_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
 }
 
 fn custom_statement<'s>(i: &mut BeanInput<'s>) -> Result<()> {
-    let ((d, _, _, v), r) = (date_string, space1, literal("custom"), till_line_ending)
+    let ((d, _, _, v), r) = (
+        date_string,
+        space1,
+        literal(CUSTOM_SYMBOL),
+        till_line_ending,
+    )
         .with_span()
         .parse_next(i)?;
     let s = InfoParams {
