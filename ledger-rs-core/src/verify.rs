@@ -12,6 +12,9 @@ use datafusion::functions_window::expr_fn::row_number;
 use datafusion::prelude::*;
 use datafusion::scalar::ScalarValue;
 
+use crate::core::ERROR_DOWNCAST;
+use crate::core::ERROR_NO_ACCOUNTS_FOUND;
+use crate::core::ERROR_NO_POSTINGS_DF;
 use crate::core::{
     ACCOUNT, ACCOUNT_SEP, CP_COMMODITY, CP_QUANTITY, FILE_NO, FINAL_CP_COMMODITY,
     FINAL_CP_QUANTITY, FINAL_TC_COMMODITY, FINAL_TC_QUANTITY, LENGTH, NUM, PRECISION, SCALE, START,
@@ -111,14 +114,14 @@ impl LedgerState {
     pub fn get_commodities_df(&mut self, c_col: &str) -> Result<DataFrame> {
         match &self.postings_df {
             Some(df) => Ok(df.clone().select(vec![col(c_col)])?.distinct()?),
-            None => Err(anyhow!("No postings dataframe")),
+            None => Err(anyhow!(ERROR_NO_POSTINGS_DF)),
         }
     }
 
     async fn get_accounts_df(&mut self) -> Result<DataFrame> {
         let postings_df = match &self.postings_df {
             Some(df) => df.clone().select(vec![col(ACCOUNT)])?.distinct()?,
-            None => return Err(anyhow!("No postings dataframe")),
+            None => return Err(anyhow!(ERROR_NO_POSTINGS_DF)),
         };
 
         let account_list_df = postings_df
@@ -140,7 +143,7 @@ impl LedgerState {
                 .column(0)
                 .as_any()
                 .downcast_ref::<UInt64Array>()
-                .expect("Failed to downcast");
+                .expect(ERROR_DOWNCAST);
             Some(array.value(0))
         } else {
             None
@@ -169,7 +172,7 @@ impl LedgerState {
                     array_to_string(col(ACCOUNT), lit(ACCOUNT_SEP)).alias(ACCOUNT),
                 ])?;
         } else {
-            return Err(anyhow!("No Accounts Found"));
+            return Err(anyhow!(ERROR_NO_ACCOUNTS_FOUND));
         }
         Ok(df)
     }

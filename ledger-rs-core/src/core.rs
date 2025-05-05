@@ -56,6 +56,8 @@ pub const NARRATION: &str = "narration";
 
 pub const ERROR_NO_ACCOUNT_DF: &str = "No accounts dataframe";
 pub const ERROR_NO_POSTINGS_DF: &str = "No postings dataframe";
+pub const ERROR_NO_ACCOUNTS_FOUND: &str = "No accounts found";
+pub const ERROR_DOWNCAST: &str = "Unable to downcast";
 
 pub const OPEN_ACTION: u32 = 0;
 pub const BALANCE_ACTION: u32 = 1;
