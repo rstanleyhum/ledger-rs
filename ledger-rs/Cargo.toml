@@ -12,3 +12,4 @@ clap = { version = "4.5.32", features = ["derive"] }
 ledger-rs-core = { path = "../ledger-rs-core" }
 ledger-rs-csv = { path = "../ledger-rs-csv" }
 ledger-rs-qfx = { path = "../ledger-rs-qfx" }
+tokio = { version = "1.44.2", features = ["full"] }

@@ -35,13 +35,17 @@ pub const TC_COMMODITY: &str = "tc_commodity";
 pub const TC_COMMODITY_RIGHT: &str = "tc_commodity_right";
 pub const TC_QUANTITY: &str = "tc_quantity";
 pub const TOTALS: &str = "totals";
+pub const NUM: &str = "num";
 pub const TRANSACTION_NO: &str = "transaction_no";
+pub const TRANSACTION_NO_RIGHT: &str = "transaction_no_right";
 pub const ACCOUNT_SEP: &str = ":";
 pub const PRECISION: usize = 38;
 pub const SCALE: usize = 2;
 
 pub const TOTAL: &str = "total";
 pub const ACCOUNT_RIGHT: &str = "account_right";
+pub const TOTALS_ACCOUNT: &str = "account_totals";
+pub const RIGHT_QUALIFIER: &str = "_right";
 pub const MATCH: &str = "match";
 pub const DATE: &str = "date";
 pub const COST_SEP: &str = "@@";
@@ -49,6 +53,9 @@ pub const TRANSACTION_FLAG: &str = "*";
 pub const TAGS: &str = "tags";
 
 pub const NARRATION: &str = "narration";
+
+pub const ERROR_NO_ACCOUNT_DF: &str = "No accounts dataframe";
+pub const ERROR_NO_POSTINGS_DF: &str = "No postings dataframe";
 
 pub const OPEN_ACTION: u32 = 0;
 pub const BALANCE_ACTION: u32 = 1;

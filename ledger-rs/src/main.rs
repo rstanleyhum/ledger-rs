@@ -59,11 +59,12 @@ enum Command {
     },
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Bean { filepath } => bean(filepath),
+        Command::Bean { filepath } => bean(filepath).await,
         Command::RjUsa {
             filepath,
             acct,
@@ -114,15 +115,16 @@ fn main() {
     }
 }
 
-fn bean(f: PathBuf) {
+async fn bean(f: PathBuf) {
     let mut state = LedgerState::new();
 
     state.insert(f.clone());
     parse_filename(f, &mut state);
-    state.verify().unwrap();
-
-    println!("tc_balances\n{}", state.tc_balances().unwrap());
-    println!("cp_balances\n{}", state.cp_balances().unwrap());
+    state.verify().await.unwrap();
+    println!("tc_balances\n");
+    state.tc_balances().await.unwrap().show().await.unwrap();
+    println!("cp_balances\n");
+    state.cp_balances().await.unwrap().show().await.unwrap();
 
     state.write_transactions();
 }

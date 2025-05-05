@@ -4,12 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-arrow = { version = "54.2.1", features = ["ffi"] }
-arrow_convert = { version = "0.8.1", features = ["rust_decimal"] }
+anyhow = "1.0.98"
+arrow = "55.0.0"
+arrow_convert = { version = "0.9.0", features = ["rust_decimal"] }
 chrono = "0.4"
-df-interchange = { version = "0.1.2", features = ["arrow_54", "polars_0_46"] }
-parquet = "54.2.1"
-polars = { version = "0.46.0", features = ["cross_join", "dtype-full", "dtype-struct", "json", "lazy", "list_arithmetic", "pivot", "polars-ops", "range", "rank", "repeat_by", "strings"] }
-polars-arrow = "0.46.0"
+datafusion = { version = "47.0.0", features = ["nested_expressions", "string_expressions"] }
 rust_decimal = "1.36.0"
 winnow = "0.7.4"

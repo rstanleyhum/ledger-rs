@@ -1,13 +1,12 @@
-use std::{collections::HashMap, path::PathBuf, sync::atomic::AtomicU32};
+use std::{collections::HashMap, fmt, path::PathBuf, sync::atomic::AtomicU32};
 
-use polars::frame::DataFrame;
+use datafusion::prelude::DataFrame;
 
 use crate::core::{
     BALANCE_ACTION, BALANCE_SYMBOL, COST_SEP, HeaderParams, IncludeParams, InfoParams,
     PostingParams, TRANSACTION_FLAG, VerificationParams,
 };
 
-#[derive(Debug)]
 pub struct LedgerState {
     pub input_files: HashMap<PathBuf, u32>,
     current_file_no: Vec<u32>,
@@ -21,10 +20,17 @@ pub struct LedgerState {
     pub verifications: Vec<VerificationParams>,
     pub includes: Vec<IncludeParams>,
     pub informationals: Vec<InfoParams>,
-    pub postings_df: DataFrame,
-    pub errors_df: DataFrame,
-    pub accounts_df: DataFrame,
-    pub commodities_df: DataFrame,
+    pub postings_df: Option<DataFrame>,
+    pub errors_df: Option<DataFrame>,
+    pub accounts_df: Option<DataFrame>,
+    pub tc_commodities_df: Option<DataFrame>,
+    pub cp_commodities_df: Option<DataFrame>,
+}
+
+impl fmt::Debug for LedgerState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Ledger State: {}", self.input_files.len())
+    }
 }
 
 impl LedgerState {
@@ -42,10 +48,11 @@ impl LedgerState {
             verifications: vec![],
             includes: vec![],
             informationals: vec![],
-            postings_df: DataFrame::empty(),
-            errors_df: DataFrame::empty(),
-            accounts_df: DataFrame::empty(),
-            commodities_df: DataFrame::empty(),
+            postings_df: None,
+            errors_df: None,
+            accounts_df: None,
+            tc_commodities_df: None,
+            cp_commodities_df: None,
         }
     }
 

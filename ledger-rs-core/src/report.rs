@@ -1,60 +1,89 @@
-use polars::error::PolarsResult;
-use polars::frame::DataFrame;
-use polars::prelude::*;
+use anyhow::Context;
+use anyhow::Result;
+use datafusion::functions_aggregate::expr_fn::sum;
+use datafusion::prelude::*;
 
 use crate::{
     core::{
-        ACCOUNT, ACCOUNT_RIGHT, FINAL_CP_COMMODITY, FINAL_CP_QUANTITY, FINAL_TC_COMMODITY,
-        FINAL_TC_QUANTITY, MATCH, TOTAL,
+        ACCOUNT, ACCOUNT_RIGHT, ERROR_NO_ACCOUNT_DF, ERROR_NO_POSTINGS_DF, FINAL_CP_COMMODITY,
+        FINAL_CP_QUANTITY, FINAL_TC_COMMODITY, FINAL_TC_QUANTITY, MATCH, RIGHT_QUALIFIER, TOTAL,
+        TOTALS_ACCOUNT,
     },
     state::LedgerState,
 };
 
 impl LedgerState {
-    pub fn tc_balances(&mut self) -> PolarsResult<DataFrame> {
+    pub async fn tc_balances(&mut self) -> Result<DataFrame> {
         self.get_balances_df(FINAL_TC_COMMODITY, FINAL_TC_QUANTITY)
+            .await
     }
 
-    pub fn cp_balances(&mut self) -> PolarsResult<DataFrame> {
+    pub async fn cp_balances(&mut self) -> Result<DataFrame> {
         self.get_balances_df(FINAL_CP_COMMODITY, FINAL_CP_QUANTITY)
+            .await
     }
 
-    fn get_balances_df(
+    async fn get_balances_df(
         &mut self,
         commodity_col: &str,
         quantity_col: &str,
-    ) -> PolarsResult<DataFrame> {
+    ) -> Result<DataFrame> {
+        let mut commodity_col_right = commodity_col.to_string();
+        commodity_col_right.push_str(RIGHT_QUALIFIER);
+        let commodity_col_right = commodity_col_right.as_str();
+
         let totals_df = self
             .postings_df
             .clone()
-            .lazy()
-            .group_by([col(ACCOUNT), col(commodity_col)])
-            .agg([col(quantity_col).sum().alias(TOTAL)]);
+            .context(ERROR_NO_POSTINGS_DF)?
+            .aggregate(
+                vec![col(ACCOUNT), col(commodity_col)],
+                vec![sum(col(quantity_col)).alias(TOTAL)],
+            )?;
 
-        let map_df = self
+        let map_totals_df = self
             .accounts_df
             .clone()
-            .lazy()
-            .cross_join(self.get_commodities_df(commodity_col)?.clone().lazy(), None)
-            .cross_join(self.accounts_df.clone().lazy(), None)
-            .with_column(
-                col(ACCOUNT_RIGHT)
-                    .str()
-                    .starts_with(col(ACCOUNT))
-                    .alias(MATCH),
-            );
-
-        map_df
+            .context(ERROR_NO_ACCOUNT_DF)?
             .join(
-                totals_df,
-                [col(ACCOUNT_RIGHT), col(commodity_col)],
-                [col(ACCOUNT), col(commodity_col)],
-                JoinArgs::new(JoinType::Inner),
-            )
-            .filter(col(MATCH).eq(true))
-            .group_by([col(ACCOUNT), col(commodity_col)])
-            .agg([col(TOTAL).sum()])
-            .sort([ACCOUNT, commodity_col], Default::default())
-            .collect()
+                self.get_commodities_df(commodity_col)?,
+                JoinType::Inner,
+                &[],
+                &[],
+                Some(lit(1).eq(lit(1))),
+            )?
+            .join(
+                self.accounts_df
+                    .clone()
+                    .context(ERROR_NO_ACCOUNT_DF)?
+                    .select(vec![col(ACCOUNT).alias(ACCOUNT_RIGHT)])?,
+                JoinType::Inner,
+                &[],
+                &[],
+                Some(lit(1).eq(lit(1))),
+            )?
+            .with_column(MATCH, starts_with(col(ACCOUNT), col(ACCOUNT_RIGHT)))?
+            .join(
+                totals_df.clone().select(vec![
+                    col(ACCOUNT).alias(TOTALS_ACCOUNT),
+                    col(commodity_col).alias(commodity_col_right),
+                    col(TOTAL),
+                ])?,
+                JoinType::Inner,
+                &[ACCOUNT_RIGHT, commodity_col],
+                &[TOTALS_ACCOUNT, commodity_col_right],
+                None,
+            )?
+            .filter(col(MATCH).is_true())?
+            .aggregate(
+                vec![col(ACCOUNT), col(commodity_col)],
+                vec![sum(col(TOTAL)).alias(TOTAL)],
+            )?
+            .sort(vec![
+                col(ACCOUNT).sort(true, false),
+                col(commodity_col).sort(true, false),
+            ])?;
+
+        Ok(map_totals_df)
     }
 }
