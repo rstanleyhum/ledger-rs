@@ -1,7 +1,35 @@
 use std::{collections::HashMap, fmt, path::PathBuf, sync::atomic::AtomicU32};
 
-use datafusion::prelude::DataFrame;
+use anyhow::Context;
+use anyhow::Result;
 
+use arrow::array::Date32Array;
+use arrow::array::Decimal128Array;
+use arrow::array::StringArray;
+use arrow::array::UInt32Array;
+use arrow::datatypes::Date32Type;
+use arrow::datatypes::Decimal128Type;
+use arrow::datatypes::DecimalType;
+use datafusion::common::JoinType;
+use datafusion::prelude::*;
+
+use futures::StreamExt;
+use itertools::izip;
+
+use crate::core::ACCOUNT;
+use crate::core::DATE;
+use crate::core::ERROR_NO_POSTINGS_DF;
+use crate::core::FINAL_CP_COMMODITY;
+use crate::core::FINAL_CP_QUANTITY;
+use crate::core::FINAL_TC_COMMODITY;
+use crate::core::FINAL_TC_QUANTITY;
+use crate::core::NARRATION;
+use crate::core::PRECISION;
+use crate::core::SCALE;
+use crate::core::STATEMENT_NO;
+use crate::core::STATEMENT_NO_RIGHT;
+use crate::core::TAGS;
+use crate::core::TRANSACTION_NO;
 use crate::core::{
     BALANCE_ACTION, BALANCE_SYMBOL, COST_SEP, HeaderParams, IncludeParams, InfoParams,
     PostingParams, TRANSACTION_FLAG, VerificationParams,
@@ -20,6 +48,7 @@ pub struct LedgerState {
     pub verifications: Vec<VerificationParams>,
     pub includes: Vec<IncludeParams>,
     pub informationals: Vec<InfoParams>,
+    pub transactions_df: Option<DataFrame>,
     pub postings_df: Option<DataFrame>,
     pub errors_df: Option<DataFrame>,
     pub accounts_df: Option<DataFrame>,
@@ -48,6 +77,7 @@ impl LedgerState {
             verifications: vec![],
             includes: vec![],
             informationals: vec![],
+            transactions_df: None,
             postings_df: None,
             errors_df: None,
             accounts_df: None,
@@ -123,51 +153,148 @@ impl LedgerState {
             })
     }
 
-    pub fn write_transactions(&self) {
-        for t in self.transactions.iter() {
-            match &t.tags {
-                Some(x) => println!("{} {} \"{}\" {}", t.date, TRANSACTION_FLAG, t.narration, x),
-                None => println!("{} {} \"{}\"", t.date, TRANSACTION_FLAG, t.narration),
-            }
-            for p in self.postings.iter() {
-                if t.statement_no == p.transaction_no {
-                    if (p.cp_commodity == p.tc_commodity) & (p.cp_quantity == p.tc_quantity) {
-                        if p.cp_commodity.is_none() {
-                            println!("  {}", p.account);
-                        } else {
-                            let cp_q = match p.cp_quantity.clone() {
-                                Some(q) => q.to_string(),
-                                None => "ERROR".to_string(),
-                            };
-                            let cp_c = match p.cp_commodity.clone() {
-                                Some(c) => c,
-                                None => "ERROR".to_string(),
-                            };
-                            println!("  {} {} {}", p.account, cp_q, cp_c);
+    pub async fn write_transactions(&self) -> Result<()> {
+        let transactions_df = self.transactions_df.clone().context("NO TRANSACTIONS DF")?;
+        let postings_df = self.postings_df.clone().context(ERROR_NO_POSTINGS_DF)?;
+        let df = transactions_df
+            .join(
+                postings_df.select(vec![
+                    col(STATEMENT_NO).alias(STATEMENT_NO_RIGHT),
+                    col(TRANSACTION_NO),
+                    col(ACCOUNT),
+                    col(FINAL_CP_COMMODITY),
+                    col(FINAL_CP_QUANTITY),
+                    col(FINAL_TC_COMMODITY),
+                    col(FINAL_TC_QUANTITY),
+                ])?,
+                JoinType::Left,
+                &[STATEMENT_NO],
+                &[TRANSACTION_NO],
+                None,
+            )?
+            .sort(vec![
+                col(DATE).sort(true, false),
+                col(STATEMENT_NO_RIGHT).sort(true, false),
+            ])?;
+
+        let mut stream = df.execute_stream().await?;
+
+        let mut current_transaction_no: u32 = 0;
+
+        while let Some(b) = stream.next().await.transpose()? {
+            let narration = b
+                .column_by_name(NARRATION)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("Unable to downcast string array");
+            let tags = b
+                .column_by_name(TAGS)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("Unable to downcast Tags");
+            let t_date = b
+                .column_by_name(DATE)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Date32Array>()
+                .expect("Unable to downcast date");
+            let account = b
+                .column_by_name(ACCOUNT)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("Account unable to downcast");
+            let transaction_no = b
+                .column_by_name(TRANSACTION_NO)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<UInt32Array>()
+                .expect("Unable to downcast transaction no col");
+            let cp_commodity = b
+                .column_by_name(FINAL_CP_COMMODITY)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("Unable to downcast cp commodity col");
+            let cp_quantity = b
+                .column_by_name(FINAL_CP_QUANTITY)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Decimal128Array>()
+                .expect("Unable to downcast decimal");
+            let tc_commodity = b
+                .column_by_name(FINAL_TC_COMMODITY)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("Unable to downcast tc commodity col");
+            let tc_quantity = b
+                .column_by_name(FINAL_TC_QUANTITY)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Decimal128Array>()
+                .expect("Unable to downcast decimal");
+
+            for rec in izip!(
+                transaction_no,
+                t_date,
+                narration,
+                tags,
+                account,
+                cp_commodity,
+                cp_quantity,
+                tc_commodity,
+                tc_quantity
+            ) {
+                match rec {
+                    (
+                        Some(t_no),
+                        Some(d),
+                        Some(n),
+                        ts,
+                        Some(a),
+                        Some(cp_c),
+                        Some(cp_q),
+                        Some(tc_c),
+                        Some(tc_q),
+                    ) => {
+                        if current_transaction_no != t_no {
+                            println!();
+                            let actual_d = Date32Type::to_naive_date(d);
+                            match ts {
+                                Some(tag_string) => {
+                                    println!(
+                                        "{}: {} {} \"{}\" {}",
+                                        t_no, actual_d, TRANSACTION_FLAG, n, tag_string
+                                    )
+                                }
+                                None => println!(
+                                    "{}: {} {} \"{}\" ",
+                                    t_no, actual_d, TRANSACTION_FLAG, n
+                                ),
+                            }
+                            current_transaction_no = t_no;
                         }
-                    } else {
-                        match (p.cp_commodity.clone(), p.tc_commodity.clone()) {
-                            (None, None) => println!("  {}", p.account),
-                            (Some(c), None) => {
-                                println!("  {} {} {}", p.account, p.cp_quantity.unwrap(), c)
-                            }
-                            (None, Some(c)) => {
-                                println!("  {} {} {}", p.account, p.tc_quantity.unwrap(), c)
-                            }
-                            (Some(c), Some(tc_c)) => println!(
+                        let actual_cp_q =
+                            Decimal128Type::format_decimal(cp_q, PRECISION as u8, SCALE as i8);
+                        if cp_c == tc_c {
+                            println!("  {} {} {}", a, actual_cp_q, cp_c);
+                        } else {
+                            let actual_tc_q =
+                                Decimal128Type::format_decimal(tc_q, PRECISION as u8, SCALE as i8);
+                            println!(
                                 "  {} {} {} {} {} {}",
-                                p.account,
-                                p.cp_quantity.unwrap(),
-                                c,
-                                COST_SEP,
-                                p.tc_quantity.unwrap(),
-                                tc_c
-                            ),
+                                a, actual_cp_q, cp_c, COST_SEP, actual_tc_q, tc_c
+                            );
                         }
                     }
-                }
+                    _ => println!("Nothing"),
+                };
             }
-            println!("");
         }
+
+        Ok(())
     }
 }

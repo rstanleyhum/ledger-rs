@@ -2018,6 +2018,8 @@ dependencies = [
  "arrow_convert",
  "chrono",
  "datafusion",
+ "futures",
+ "itertools",
  "rust_decimal",
  "winnow",
 ]

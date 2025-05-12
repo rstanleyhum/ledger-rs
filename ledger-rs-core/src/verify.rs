@@ -26,6 +26,15 @@ use crate::state::LedgerState;
 impl LedgerState {
     pub async fn verify(&mut self) -> Result<()> {
         let ctx = SessionContext::new();
+        let array: Arc<dyn Array> = self.transactions.try_into_arrow()?;
+        let struct_array = array
+            .as_any()
+            .downcast_ref::<arrow::array::StructArray>()
+            .unwrap();
+        let batch: RecordBatch = struct_array.try_into()?;
+        let df_transactions = ctx.read_batch(batch)?;
+        self.transactions_df = Some(df_transactions);
+
         let array: Arc<dyn Array> = self.postings.try_into_arrow()?;
         let struct_array = array
             .as_any()

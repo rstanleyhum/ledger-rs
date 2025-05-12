@@ -70,48 +70,57 @@ async fn main() {
             acct,
             owner,
             currency,
-        } => rj_usa(filepath, acct.as_str(), owner.as_str(), currency.as_str()),
+        } => rj_usa(filepath, acct.as_str(), owner.as_str(), currency.as_str()).await,
         Command::RjCdnClosed {
             filepath,
             acct,
             owner,
             currency,
             commodity_f,
-        } => rj_cdn_closed(
-            filepath,
-            acct.as_str(),
-            owner.as_str(),
-            currency.as_str(),
-            commodity_f,
-        ),
+        } => {
+            rj_cdn_closed(
+                filepath,
+                acct.as_str(),
+                owner.as_str(),
+                currency.as_str(),
+                commodity_f,
+            )
+            .await
+        }
         Command::RjCdnActivities {
             filepath,
             acct,
             owner,
             currency,
             symbol_f,
-        } => rj_cdn_activites(
-            filepath,
-            acct.as_str(),
-            owner.as_str(),
-            currency.as_str(),
-            symbol_f,
-        ),
+        } => {
+            rj_cdn_activites(
+                filepath,
+                acct.as_str(),
+                owner.as_str(),
+                currency.as_str(),
+                symbol_f,
+            )
+            .await
+        }
         Command::RjCdnHoldings {
             filepath,
             bkdate_string,
             currency,
-        } => rj_cdn_holdings(
-            filepath,
-            NaiveDate::from_str(&bkdate_string).unwrap(),
-            currency.as_str(),
-        ),
+        } => {
+            rj_cdn_holdings(
+                filepath,
+                NaiveDate::from_str(&bkdate_string).unwrap(),
+                currency.as_str(),
+            )
+            .await
+        }
         Command::RjSymbols { symbol_f } => rj_symbols(symbol_f),
         Command::Qfx {
             symbols_f,
             filepath,
             encoding,
-        } => read_qfx(filepath, encoding, symbols_f),
+        } => read_qfx(filepath, encoding, symbols_f).await,
     }
 }
 
@@ -126,10 +135,10 @@ async fn bean(f: PathBuf) {
     println!("cp_balances\n");
     state.cp_balances().await.unwrap().show().await.unwrap();
 
-    state.write_transactions();
+    state.write_transactions().await.unwrap();
 }
 
-fn rj_usa(f: PathBuf, acct: &str, owner: &str, currency: &str) {
+async fn rj_usa(f: PathBuf, acct: &str, owner: &str, currency: &str) {
     let mut state = LedgerState::new();
 
     process_us_transaction(f.to_str().unwrap(), acct, owner, currency, &mut state).unwrap();
@@ -138,10 +147,11 @@ fn rj_usa(f: PathBuf, acct: &str, owner: &str, currency: &str) {
     println!("postings: {}", state.postings.len());
     println!("balances: {}", state.verifications.len());
     println!("\n");
-    state.write_transactions();
+    state.verify().await.unwrap();
+    state.write_transactions().await.unwrap();
 }
 
-fn rj_cdn_closed(f: PathBuf, acct: &str, owner: &str, currency: &str, commodity_f: PathBuf) {
+async fn rj_cdn_closed(f: PathBuf, acct: &str, owner: &str, currency: &str, commodity_f: PathBuf) {
     let mut state = LedgerState::new();
 
     process_closed_acct_trans(
@@ -158,10 +168,17 @@ fn rj_cdn_closed(f: PathBuf, acct: &str, owner: &str, currency: &str, commodity_
     println!("postings: {}", state.postings.len());
     println!("balances: {}", state.verifications.len());
     println!("\n");
-    state.write_transactions();
+    state.verify().await.unwrap();
+    state.write_transactions().await.unwrap();
 }
 
-fn rj_cdn_activites(f: PathBuf, acct: &str, owner: &str, currency: &str, commodity_f: PathBuf) {
+async fn rj_cdn_activites(
+    f: PathBuf,
+    acct: &str,
+    owner: &str,
+    currency: &str,
+    commodity_f: PathBuf,
+) {
     let mut state = LedgerState::new();
 
     process_activites(
@@ -178,10 +195,11 @@ fn rj_cdn_activites(f: PathBuf, acct: &str, owner: &str, currency: &str, commodi
     println!("postings: {}", state.postings.len());
     println!("balances: {}", state.verifications.len());
     println!("\n");
-    state.write_transactions();
+    state.verify().await.unwrap();
+    state.write_transactions().await.unwrap();
 }
 
-fn rj_cdn_holdings(f: PathBuf, bkdate: NaiveDate, currency: &str) {
+async fn rj_cdn_holdings(f: PathBuf, bkdate: NaiveDate, currency: &str) {
     let mut state = LedgerState::new();
 
     compile_holdings(f.to_str().unwrap(), bkdate, currency, &mut state).unwrap();
@@ -190,7 +208,8 @@ fn rj_cdn_holdings(f: PathBuf, bkdate: NaiveDate, currency: &str) {
     println!("postings: {}", state.postings.len());
     println!("balances: {}", state.verifications.len());
     println!("\n");
-    state.write_transactions();
+    state.verify().await.unwrap();
+    state.write_transactions().await.unwrap();
 }
 
 fn rj_symbols(f: PathBuf) {
@@ -198,7 +217,7 @@ fn rj_symbols(f: PathBuf) {
     println!("{:?}", result);
 }
 
-fn read_qfx(f: PathBuf, e: Option<String>, symbols_f: PathBuf) {
+async fn read_qfx(f: PathBuf, e: Option<String>, symbols_f: PathBuf) {
     let mut state = LedgerState::new();
 
     let _ = parse_qfx_file(f, e, symbols_f, &mut state);
@@ -207,6 +226,20 @@ fn read_qfx(f: PathBuf, e: Option<String>, symbols_f: PathBuf) {
     println!("postings: {}", state.postings.len());
     println!("balances: {}", state.verifications.len());
     println!("\n");
-    state.write_transactions();
-    state.write_balances();
+    state.verify().await.unwrap();
+    state.write_transactions().await.unwrap();
+    state
+        .errors_df
+        .clone()
+        .expect("No errors")
+        .show()
+        .await
+        .unwrap();
+    state
+        .postings_df
+        .clone()
+        .expect("no postings")
+        .show()
+        .await
+        .unwrap();
 }

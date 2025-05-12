@@ -31,6 +31,7 @@ pub const FILE_NO: &str = "file_no";
 pub const LENGTH: &str = "length";
 pub const START: &str = "start";
 pub const STATEMENT_NO: &str = "statement_no";
+pub const STATEMENT_NO_RIGHT: &str = "statement_no_right";
 pub const TC_COMMODITY: &str = "tc_commodity";
 pub const TC_COMMODITY_RIGHT: &str = "tc_commodity_right";
 pub const TC_QUANTITY: &str = "tc_quantity";
