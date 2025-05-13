@@ -136,6 +136,7 @@ async fn bean(f: PathBuf) {
     state.cp_balances().await.unwrap().show().await.unwrap();
 
     state.write_transactions().await.unwrap();
+    state.write_verifications().await.unwrap();
 }
 
 async fn rj_usa(f: PathBuf, acct: &str, owner: &str, currency: &str) {
@@ -228,5 +229,5 @@ async fn read_qfx(f: PathBuf, e: Option<String>, symbols_f: PathBuf) {
     println!("\n");
     state.verify().await.unwrap();
     state.write_transactions().await.unwrap();
-    state.write_balances().await.unwrap();
+    state.write_verifications().await.unwrap();
 }

@@ -2,6 +2,7 @@ use std::{collections::HashMap, fmt, path::PathBuf, sync::atomic::AtomicU32};
 
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::anyhow;
 
 use arrow::array::Date32Array;
 use arrow::array::Decimal128Array;
@@ -18,6 +19,8 @@ use itertools::izip;
 
 use crate::core::ACCOUNT;
 use crate::core::ACTION_COL;
+use crate::core::CLOSE_ACTION;
+use crate::core::CLOSE_SYMBOL;
 use crate::core::COMMODITY;
 use crate::core::DATE;
 use crate::core::ERROR_NO_POSTINGS_DF;
@@ -26,6 +29,8 @@ use crate::core::FINAL_CP_QUANTITY;
 use crate::core::FINAL_TC_COMMODITY;
 use crate::core::FINAL_TC_QUANTITY;
 use crate::core::NARRATION;
+use crate::core::OPEN_ACTION;
+use crate::core::OPEN_SYMBOL;
 use crate::core::PRECISION;
 use crate::core::QUANTITY;
 use crate::core::SCALE;
@@ -141,50 +146,63 @@ impl LedgerState {
         self.current_file_no.pop();
     }
 
-    pub async fn write_balances(&self) -> Result<()> {
+    pub async fn write_verifications(&self) -> Result<()> {
         let df = self
             .verifications_df
             .clone()
-            .expect("No verifications df")
-            .filter(col(ACTION_COL).eq(lit(BALANCE_ACTION)))?;
+            .context("No verifications df")?;
 
         let mut stream = df.execute_stream().await?;
 
         while let Some(b) = stream.next().await.transpose()? {
+            let action = b
+                .column_by_name(ACTION_COL)
+                .context("Unable to find action col")?
+                .as_any()
+                .downcast_ref::<UInt32Array>()
+                .context("Unable to downcast action")?;
             let t_date = b
                 .column_by_name(DATE)
-                .unwrap()
+                .context("unable to find date column")?
                 .as_any()
                 .downcast_ref::<Date32Array>()
-                .expect("Unable to downcast date");
+                .context("Unable to downcast date")?;
             let account = b
                 .column_by_name(ACCOUNT)
-                .unwrap()
+                .context("uable to find account col")?
                 .as_any()
                 .downcast_ref::<StringArray>()
-                .expect("Account unable to downcast");
+                .context("Account unable to downcast")?;
             let commodity = b
                 .column_by_name(COMMODITY)
-                .unwrap()
+                .context("unable to find commodity col")?
                 .as_any()
                 .downcast_ref::<StringArray>()
-                .expect("Unable to downcast cp commodity col");
+                .context("Unable to downcast cp commodity col")?;
             let quantity = b
                 .column_by_name(QUANTITY)
-                .unwrap()
+                .context("Unable to find quantity col")?
                 .as_any()
                 .downcast_ref::<Decimal128Array>()
-                .expect("Unable to downcast decimal");
+                .context("Unable to downcast decimal")?;
 
-            for rec in izip!(t_date, account, commodity, quantity) {
+            for rec in izip!(action, t_date, account, commodity, quantity) {
                 match rec {
-                    (Some(d), Some(a), Some(c), Some(q)) => {
+                    (Some(OPEN_ACTION), Some(d), Some(a), None, None) => {
+                        let actual_d = Date32Type::to_naive_date(d);
+                        println!("{} {} {}", actual_d, OPEN_SYMBOL, a);
+                    }
+                    (Some(CLOSE_ACTION), Some(d), Some(a), None, None) => {
+                        let actual_d = Date32Type::to_naive_date(d);
+                        println!("{} {} {}", actual_d, CLOSE_SYMBOL, a);
+                    }
+                    (Some(BALANCE_ACTION), Some(d), Some(a), Some(c), Some(q)) => {
                         let actual_d = Date32Type::to_naive_date(d);
                         let actual_q =
                             Decimal128Type::format_decimal(q, PRECISION as u8, SCALE as i8);
                         println!("{} {} {} {} {}", actual_d, BALANCE_SYMBOL, a, actual_q, c);
                     }
-                    _ => println!("Nothing"),
+                    _ => return Err(anyhow!("Unknown action in write verfications")),
                 };
             }
         }
