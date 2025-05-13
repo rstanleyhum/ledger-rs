@@ -1,3 +1,4 @@
+pub mod cmp;
 pub mod core;
 pub mod parse;
 pub mod report;

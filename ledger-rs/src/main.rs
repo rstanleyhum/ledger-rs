@@ -55,6 +55,7 @@ enum Command {
     Qfx {
         symbols_f: PathBuf,
         filepath: PathBuf,
+        bean_filepath: Option<PathBuf>,
         encoding: Option<String>,
     },
 }
@@ -119,8 +120,9 @@ async fn main() {
         Command::Qfx {
             symbols_f,
             filepath,
+            bean_filepath,
             encoding,
-        } => read_qfx(filepath, encoding, symbols_f).await,
+        } => read_qfx(filepath, encoding, symbols_f, bean_filepath).await,
     }
 }
 
@@ -218,7 +220,7 @@ fn rj_symbols(f: PathBuf) {
     println!("{:?}", result);
 }
 
-async fn read_qfx(f: PathBuf, e: Option<String>, symbols_f: PathBuf) {
+async fn read_qfx(f: PathBuf, e: Option<String>, symbols_f: PathBuf, b: Option<PathBuf>) {
     let mut state = LedgerState::new();
 
     let _ = parse_qfx_file(f, e, symbols_f, &mut state);
@@ -230,4 +232,18 @@ async fn read_qfx(f: PathBuf, e: Option<String>, symbols_f: PathBuf) {
     state.verify().await.unwrap();
     state.write_transactions().await.unwrap();
     state.write_verifications().await.unwrap();
+
+    if b.is_none() {
+        return;
+    }
+
+    let mut b_state = LedgerState::new();
+
+    let b_path = b.unwrap();
+
+    b_state.insert(b_path.clone());
+    parse_filename(b_path.clone(), &mut b_state);
+    b_state.verify().await.unwrap();
+
+    state.compare_postings(&b_state).await.unwrap();
 }
