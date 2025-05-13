@@ -25,7 +25,7 @@ use crate::core::{
     STATEMENT_NO, TC_COMMODITY, TC_COMMODITY_RIGHT, TC_QUANTITY, TOTALS, TRANSACTION_NO,
     TRANSACTION_NO_RIGHT,
 };
-use crate::state::LedgerState;
+use crate::state::ledgerstate::LedgerState;
 
 impl LedgerState {
     pub async fn verify(&mut self) -> Result<()> {

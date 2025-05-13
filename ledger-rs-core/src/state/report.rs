@@ -9,7 +9,7 @@ use crate::{
         FINAL_CP_QUANTITY, FINAL_TC_COMMODITY, FINAL_TC_QUANTITY, MATCH, RIGHT_QUALIFIER, TOTAL,
         TOTALS_ACCOUNT,
     },
-    state::LedgerState,
+    state::ledgerstate::LedgerState,
 };
 
 impl LedgerState {

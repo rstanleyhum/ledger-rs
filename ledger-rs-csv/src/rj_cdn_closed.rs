@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use ledger_rs_core::{
     core::{HeaderParams, PostingParams},
-    state::LedgerState,
+    state::ledgerstate::LedgerState,
 };
 
 use crate::{

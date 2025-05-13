@@ -3,7 +3,7 @@ use std::{path::PathBuf, str::FromStr};
 use chrono::NaiveDate;
 use clap::{Parser, Subcommand};
 
-use ledger_rs_core::{parse::parse_filename, state::LedgerState};
+use ledger_rs_core::{parse::parse_filename, state::ledgerstate::LedgerState};
 use ledger_rs_csv::{
     rj_cdn::{compile_holdings, process_activites},
     rj_cdn_closed::process_closed_acct_trans,

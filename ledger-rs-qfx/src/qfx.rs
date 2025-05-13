@@ -11,7 +11,7 @@ use encoding_rs::{Encoding, WINDOWS_1252};
 use encoding_rs_io::DecodeReaderBytesBuilder;
 use ledger_rs_core::{
     core::{BALANCE_ACTION, HeaderParams, PostingParams, VerificationParams},
-    state::LedgerState,
+    state::ledgerstate::LedgerState,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};

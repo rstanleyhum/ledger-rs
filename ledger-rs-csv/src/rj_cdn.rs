@@ -3,7 +3,7 @@ use std::{io::Error, sync::atomic::Ordering};
 use chrono::NaiveDate;
 use ledger_rs_core::{
     core::{BALANCE_ACTION, HeaderParams, PostingParams, VerificationParams},
-    state::LedgerState,
+    state::ledgerstate::LedgerState,
 };
 use rust_decimal::Decimal;
 use serde::Deserialize;

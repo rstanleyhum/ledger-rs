@@ -34,7 +34,7 @@ use crate::core::{
     OPTION_ACTION, OPTION_SYMBOL, TRANSACTION_FLAG,
 };
 use crate::core::{HeaderParams, IncludeParams, InfoParams, PostingParams, VerificationParams};
-use crate::state::LedgerState;
+use crate::state::ledgerstate::LedgerState;
 
 pub type BeanInput<'b> = Stateful<LocatingSlice<Str<'b>>, &'b mut LedgerState>;
 

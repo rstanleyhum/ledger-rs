@@ -9,7 +9,7 @@ use crate::{
     core::{
         ACCOUNT, DATE, FINAL_CP_COMMODITY, FINAL_CP_QUANTITY, FINAL_TC_COMMODITY, FINAL_TC_QUANTITY,
     },
-    state::LedgerState,
+    state::ledgerstate::LedgerState,
 };
 
 impl LedgerState {
