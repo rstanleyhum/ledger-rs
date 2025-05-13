@@ -17,6 +17,8 @@ use futures::StreamExt;
 use itertools::izip;
 
 use crate::core::ACCOUNT;
+use crate::core::ACTION_COL;
+use crate::core::COMMODITY;
 use crate::core::DATE;
 use crate::core::ERROR_NO_POSTINGS_DF;
 use crate::core::FINAL_CP_COMMODITY;
@@ -25,6 +27,7 @@ use crate::core::FINAL_TC_COMMODITY;
 use crate::core::FINAL_TC_QUANTITY;
 use crate::core::NARRATION;
 use crate::core::PRECISION;
+use crate::core::QUANTITY;
 use crate::core::SCALE;
 use crate::core::STATEMENT_NO;
 use crate::core::STATEMENT_NO_RIGHT;
@@ -54,6 +57,7 @@ pub struct LedgerState {
     pub accounts_df: Option<DataFrame>,
     pub tc_commodities_df: Option<DataFrame>,
     pub cp_commodities_df: Option<DataFrame>,
+    pub verifications_df: Option<DataFrame>,
 }
 
 impl fmt::Debug for LedgerState {
@@ -83,6 +87,7 @@ impl LedgerState {
             accounts_df: None,
             tc_commodities_df: None,
             cp_commodities_df: None,
+            verifications_df: None,
         }
     }
 
@@ -136,21 +141,55 @@ impl LedgerState {
         self.current_file_no.pop();
     }
 
-    pub fn write_balances(&self) {
-        self.verifications
-            .iter()
-            .filter(|x| x.action == BALANCE_ACTION)
-            .for_each(|x| {
-                println!(
-                    "{} {} {} {} {}",
-                    x.date,
-                    BALANCE_SYMBOL,
-                    x.account,
-                    x.quantity.unwrap(),
-                    x.commodity.clone().unwrap(),
-                );
-                println!("");
-            })
+    pub async fn write_balances(&self) -> Result<()> {
+        let df = self
+            .verifications_df
+            .clone()
+            .expect("No verifications df")
+            .filter(col(ACTION_COL).eq(lit(BALANCE_ACTION)))?;
+
+        let mut stream = df.execute_stream().await?;
+
+        while let Some(b) = stream.next().await.transpose()? {
+            let t_date = b
+                .column_by_name(DATE)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Date32Array>()
+                .expect("Unable to downcast date");
+            let account = b
+                .column_by_name(ACCOUNT)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("Account unable to downcast");
+            let commodity = b
+                .column_by_name(COMMODITY)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("Unable to downcast cp commodity col");
+            let quantity = b
+                .column_by_name(QUANTITY)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Decimal128Array>()
+                .expect("Unable to downcast decimal");
+
+            for rec in izip!(t_date, account, commodity, quantity) {
+                match rec {
+                    (Some(d), Some(a), Some(c), Some(q)) => {
+                        let actual_d = Date32Type::to_naive_date(d);
+                        let actual_q =
+                            Decimal128Type::format_decimal(q, PRECISION as u8, SCALE as i8);
+                        println!("{} {} {} {} {}", actual_d, BALANCE_SYMBOL, a, actual_q, c);
+                    }
+                    _ => println!("Nothing"),
+                };
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn write_transactions(&self) -> Result<()> {

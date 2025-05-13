@@ -35,6 +35,8 @@ pub const STATEMENT_NO_RIGHT: &str = "statement_no_right";
 pub const TC_COMMODITY: &str = "tc_commodity";
 pub const TC_COMMODITY_RIGHT: &str = "tc_commodity_right";
 pub const TC_QUANTITY: &str = "tc_quantity";
+pub const COMMODITY: &str = "commodity";
+pub const QUANTITY: &str = "quantity";
 pub const TOTALS: &str = "totals";
 pub const NUM: &str = "num";
 pub const TRANSACTION_NO: &str = "transaction_no";
@@ -42,6 +44,7 @@ pub const TRANSACTION_NO_RIGHT: &str = "transaction_no_right";
 pub const ACCOUNT_SEP: &str = ":";
 pub const PRECISION: usize = 38;
 pub const SCALE: usize = 2;
+pub const ACTION_COL: &str = "action";
 
 pub const TOTAL: &str = "total";
 pub const ACCOUNT_RIGHT: &str = "account_right";

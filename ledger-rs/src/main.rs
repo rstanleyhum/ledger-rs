@@ -228,18 +228,5 @@ async fn read_qfx(f: PathBuf, e: Option<String>, symbols_f: PathBuf) {
     println!("\n");
     state.verify().await.unwrap();
     state.write_transactions().await.unwrap();
-    state
-        .errors_df
-        .clone()
-        .expect("No errors")
-        .show()
-        .await
-        .unwrap();
-    state
-        .postings_df
-        .clone()
-        .expect("no postings")
-        .show()
-        .await
-        .unwrap();
+    state.write_balances().await.unwrap();
 }

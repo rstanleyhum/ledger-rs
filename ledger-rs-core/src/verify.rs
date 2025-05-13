@@ -12,9 +12,13 @@ use datafusion::functions_window::expr_fn::row_number;
 use datafusion::prelude::*;
 use datafusion::scalar::ScalarValue;
 
+use crate::core::ACTION_COL;
+use crate::core::COMMODITY;
+use crate::core::DATE;
 use crate::core::ERROR_DOWNCAST;
 use crate::core::ERROR_NO_ACCOUNTS_FOUND;
 use crate::core::ERROR_NO_POSTINGS_DF;
+use crate::core::QUANTITY;
 use crate::core::{
     ACCOUNT, ACCOUNT_SEP, CP_COMMODITY, CP_QUANTITY, FILE_NO, FINAL_CP_COMMODITY,
     FINAL_CP_QUANTITY, FINAL_TC_COMMODITY, FINAL_TC_QUANTITY, LENGTH, NUM, PRECISION, SCALE, START,
@@ -26,6 +30,27 @@ use crate::state::LedgerState;
 impl LedgerState {
     pub async fn verify(&mut self) -> Result<()> {
         let ctx = SessionContext::new();
+
+        let array: Arc<dyn Array> = self.verifications.try_into_arrow()?;
+        let struct_array = array
+            .as_any()
+            .downcast_ref::<arrow::array::StructArray>()
+            .unwrap();
+        let batch: RecordBatch = struct_array.try_into()?;
+        let df_verifications = ctx.read_batch(batch)?;
+        let df_verifications = df_verifications.select(vec![
+            col(DATE),
+            col(ACTION_COL),
+            col(ACCOUNT),
+            cast(
+                col(QUANTITY),
+                DataType::Decimal128(PRECISION as u8, SCALE as i8),
+            )
+            .alias(QUANTITY),
+            col(COMMODITY),
+        ])?;
+        self.verifications_df = Some(df_verifications);
+
         let array: Arc<dyn Array> = self.transactions.try_into_arrow()?;
         let struct_array = array
             .as_any()
